@@ -3,12 +3,13 @@
 """
 
 from pathlib import Path
+from typing import List
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFileDialog, QProgressBar,
     QTextEdit, QComboBox, QTabWidget, QSpinBox,
     QDoubleSpinBox, QCheckBox, QLineEdit, QMessageBox,
-    QGroupBox, QFormLayout
+    QGroupBox, QFormLayout, QListWidget, QListWidgetItem
 )
 from PyQt6.QtCore import Qt, QThread
 
@@ -40,20 +41,38 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central)
         layout.setSpacing(15)
 
-        # 1. 文件选择
+        # 1. 文件选择区域 - 改为批量模式
         file_group = QGroupBox("视频文件")
-        file_layout = QHBoxLayout(file_group)
-        self.file_label = QLabel("请拖拽视频文件到这里，或点击选择")
-        self.file_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.file_label.setStyleSheet("padding: 30px; border: 2px dashed #aaa;")
-        self.file_label.setAcceptDrops(True)
-        self.file_label.dragEnterEvent = self._drag_enter_event
-        self.file_label.dropEvent = self._drop_event
-        file_layout.addWidget(self.file_label)
+        file_layout = QVBoxLayout(file_group)
 
-        self.select_btn = QPushButton("选择文件")
-        self.select_btn.clicked.connect(self._select_file)
-        file_layout.addWidget(self.select_btn)
+        # 文件列表
+        self.file_list = QListWidget()
+        self.file_list.setMaximumHeight(150)
+        self.file_list.setAcceptDrops(True)
+        self.file_list.dragEnterEvent = self._drag_enter_event
+        self.file_list.dropEvent = self._drop_event
+        file_layout.addWidget(self.file_list)
+
+        # 统计标签
+        self.file_count_label = QLabel("已选择: 0 个视频")
+        file_layout.addWidget(self.file_count_label)
+
+        # 按钮行
+        btn_layout = QHBoxLayout()
+        self.add_file_btn = QPushButton("添加文件")
+        self.add_file_btn.clicked.connect(self._add_files)
+        btn_layout.addWidget(self.add_file_btn)
+
+        self.add_dir_btn = QPushButton("添加目录")
+        self.add_dir_btn.clicked.connect(self._add_directory)
+        btn_layout.addWidget(self.add_dir_btn)
+
+        self.clear_btn = QPushButton("清空")
+        self.clear_btn.clicked.connect(self._clear_files)
+        btn_layout.addWidget(self.clear_btn)
+
+        btn_layout.addStretch()
+        file_layout.addLayout(btn_layout)
 
         layout.addWidget(file_group)
 
@@ -65,14 +84,44 @@ class MainWindow(QMainWindow):
         self._setup_llm_tab()
         layout.addWidget(self.tabs)
 
-        # 3. 进度条
+        # 3. 批量进度条（新增）
+        batch_progress_group = QGroupBox("整体进度")
+        batch_layout = QVBoxLayout(batch_progress_group)
+
+        self.batch_progress_bar = QProgressBar()
+        self.batch_progress_bar.setRange(0, 100)
+        self.batch_progress_bar.setValue(0)
+        batch_layout.addWidget(self.batch_progress_bar)
+
+        self.batch_status_label = QLabel("就绪")
+        batch_layout.addWidget(self.batch_status_label)
+
+        # 统计信息
+        stats_layout = QHBoxLayout()
+        self.completed_label = QLabel("已完成: 0")
+        self.pending_label = QLabel("待处理: 0")
+        self.eta_label = QLabel("预计剩余: --")
+        stats_layout.addWidget(self.completed_label)
+        stats_layout.addWidget(self.pending_label)
+        stats_layout.addWidget(self.eta_label)
+        stats_layout.addStretch()
+        batch_layout.addLayout(stats_layout)
+
+        layout.addWidget(batch_progress_group)
+
+        # 4. 当前视频进度条（原有）
+        video_progress_group = QGroupBox("当前视频进度")
+        video_layout = QVBoxLayout(video_progress_group)
+
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        layout.addWidget(self.progress_bar)
+        video_layout.addWidget(self.progress_bar)
 
-        self.status_label = QLabel("就绪")
-        layout.addWidget(self.status_label)
+        self.status_label = QLabel("等待开始...")
+        video_layout.addWidget(self.status_label)
+
+        layout.addWidget(video_progress_group)
 
         # 4. 日志区域
         self.log_text = QTextEdit()
@@ -252,25 +301,63 @@ class MainWindow(QMainWindow):
     def _drop_event(self, event):
         """拖拽放下"""
         urls = event.mimeData().urls()
-        if urls:
-            file_path = urls[0].toLocalFile()
-            if file_path.endswith(('.mp4', '.mkv', '.avi', '.mov', '.webm')):
-                self._set_video_file(file_path)
+        paths = []
+        for url in urls:
+            path = url.toLocalFile()
+            if path:
+                paths.append(Path(path))
 
-    def _select_file(self):
-        """选择文件"""
-        file_path, _ = QFileDialog.getOpenFileName(
+        if paths:
+            # 如果是目录，扫描；如果是文件，直接添加
+            from ...core.batch_scanner import VideoScanner
+            scanner = VideoScanner()
+            tasks = scanner.scan(paths, recursive=True)
+            self._add_videos([Path(t.video_path) for t in tasks])
+
+    def _add_files(self):
+        """添加文件"""
+        files, _ = QFileDialog.getOpenFileNames(
             self, "选择视频文件", "",
             "视频文件 (*.mp4 *.mkv *.avi *.mov *.webm);;所有文件 (*)"
         )
-        if file_path:
-            self._set_video_file(file_path)
+        if files:
+            self._add_videos([Path(f) for f in files])
 
-    def _set_video_file(self, path: str):
-        """设置视频文件"""
-        self.file_label.setText(f"已选择: {Path(path).name}")
-        self.file_label.setProperty("file_path", path)
-        self._log(f"已选择文件: {path}")
+    def _add_directory(self):
+        """添加目录"""
+        dir_path = QFileDialog.getExistingDirectory(self, "选择视频目录")
+        if dir_path:
+            from ...core.batch_scanner import VideoScanner
+            scanner = VideoScanner()
+            tasks = scanner.scan([Path(dir_path)], recursive=True)
+            self._add_videos([Path(t.video_path) for t in tasks])
+
+    def _add_videos(self, paths: List[Path]):
+        """添加视频到列表"""
+        for path in paths:
+            # 去重检查
+            exists = False
+            for i in range(self.file_list.count()):
+                if self.file_list.item(i).data(Qt.ItemDataRole.UserRole) == str(path):
+                    exists = True
+                    break
+            if not exists:
+                item = QListWidgetItem(f"📹 {path.name}")
+                item.setData(Qt.ItemDataRole.UserRole, str(path))
+                item.setToolTip(str(path))
+                self.file_list.addItem(item)
+
+        self._update_file_count()
+
+    def _clear_files(self):
+        """清空列表"""
+        self.file_list.clear()
+        self._update_file_count()
+
+    def _update_file_count(self):
+        """更新文件计数"""
+        count = self.file_list.count()
+        self.file_count_label.setText(f"已选择: {count} 个视频")
 
     def _on_preset_changed(self, preset: str):
         """预设改变"""
@@ -282,47 +369,58 @@ class MainWindow(QMainWindow):
             self.min_silence_ms.setValue(200)
 
     def _start_generation(self):
-        """开始生成"""
-        file_path = self.file_label.property("file_path")
-        if not file_path:
-            QMessageBox.warning(self, "警告", "请先选择视频文件")
+        """开始批量生成"""
+        # 收集所有视频路径
+        video_paths = []
+        for i in range(self.file_list.count()):
+            path = self.file_list.item(i).data(Qt.ItemDataRole.UserRole)
+            if path:
+                video_paths.append(Path(path))
+
+        if not video_paths:
+            QMessageBox.warning(self, "警告", "请先添加视频文件")
             return
 
         # 更新配置
         self._update_config()
 
-        # 创建 worker
-        self.worker = PipelineWorker(self.config, Path(file_path))
-        self.worker.progress.connect(self._on_progress)
+        # 创建 VideoTask 列表
+        from ...core.batch_scanner import VideoScanner
+        scanner = VideoScanner()
+        tasks = scanner.scan(video_paths, recursive=False)  # 已经扫描过了
+
+        # 创建批量 worker
+        from .workers.batch_worker import BatchWorker
+        self.worker = BatchWorker(self.config, tasks)
+
+        # 连接信号
+        self.worker.batch_started.connect(self._on_batch_started)
+        self.worker.batch_progress.connect(self._on_batch_progress)
+        self.worker.batch_finished.connect(self._on_batch_finished)
+        self.worker.batch_error.connect(self._on_batch_error)
+        self.worker.video_started.connect(self._on_video_started)
+        self.worker.video_progress.connect(self._on_video_progress)
+        self.worker.video_finished.connect(self._on_video_finished)
         self.worker.log.connect(self._log)
-        self.worker.finished.connect(self._on_finished)
-        self.worker.error.connect(self._on_error)
-        self.worker.cancelled.connect(self._on_cancelled)
 
         # 更新 UI
         self.start_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
+        self.batch_progress_bar.setValue(0)
         self.progress_bar.setValue(0)
 
         # 启动
         self.worker.start()
-        self._log("开始生成字幕...")
+        self._log(f"开始批量处理 {len(tasks)} 个视频...")
 
     def _cancel_generation(self):
         """取消生成"""
         if self.worker and self.worker.isRunning():
-            self.worker.stop()
+            self.worker.cancel()
             self._log("正在取消...")
             # 立即禁用取消按钮，防止重复点击
             self.cancel_btn.setEnabled(False)
             self.status_label.setText("正在取消...")
-
-    def _on_cancelled(self):
-        """取消完成"""
-        self.start_btn.setEnabled(True)
-        self.cancel_btn.setEnabled(False)
-        self.status_label.setText("已取消")
-        self._log("✓ 已取消")
 
     def _update_config(self):
         """更新配置"""
@@ -350,31 +448,71 @@ class MainWindow(QMainWindow):
         mode_map = {"仅纠错": "correct", "翻译": "translate", "双语": "bilingual"}
         self.config.llm.output_mode = mode_map.get(self.llm_mode.currentText(), "correct")
 
-    def _on_progress(self, percent: int, message: str):
-        """进度更新"""
-        self.progress_bar.setValue(percent)
-        self.status_label.setText(message)
-
-    def _on_finished(self, output_path: str):
-        """完成"""
-        self.start_btn.setEnabled(True)
-        self.cancel_btn.setEnabled(False)
-        self.progress_bar.setValue(100)
-        self._log(f"✓ 完成！输出: {output_path}")
-        QMessageBox.information(self, "完成", f"字幕已生成:\n{output_path}")
-
-    def _on_error(self, error_msg: str):
-        """错误"""
-        self.start_btn.setEnabled(True)
-        self.cancel_btn.setEnabled(False)
-        self._log(f"✗ 错误: {error_msg}")
-        QMessageBox.critical(self, "错误", error_msg)
-
     def _on_save_config_clicked(self):
         """保存配置按钮点击"""
         self._save_config()
         self._log(f"✓ 配置已保存到: {self.config_manager.user_config_file}")
         QMessageBox.information(self, "保存成功", "配置已保存为用户默认配置")
+
+    def _on_batch_started(self, total_count: int):
+        """批量处理开始"""
+        self.batch_status_label.setText(f"开始处理 {total_count} 个视频...")
+
+    def _on_batch_progress(self, current: int, total: int, video_name: str):
+        """批量进度更新"""
+        percent = int((current / total) * 100) if total > 0 else 0
+        self.batch_progress_bar.setValue(percent)
+        self.batch_status_label.setText(f"处理中: {video_name} ({current+1}/{total})")
+
+        # 更新统计
+        self.completed_label.setText(f"已完成: {current}")
+        self.pending_label.setText(f"待处理: {total - current}")
+
+    def _on_video_started(self, video_path: str, index: int, total: int):
+        """开始处理单个视频"""
+        self.status_label.setText(f"正在处理: {Path(video_path).name}")
+        # 高亮当前处理的项
+        for i in range(self.file_list.count()):
+            item = self.file_list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == video_path:
+                self.file_list.setCurrentItem(item)
+                break
+
+    def _on_video_progress(self, percent: int, message: str):
+        """单个视频进度"""
+        self.progress_bar.setValue(percent)
+        if message:
+            self.status_label.setText(message)
+
+    def _on_video_finished(self, video_path: str, success: bool, output_path: str):
+        """单个视频完成"""
+        # 更新列表项状态
+        for i in range(self.file_list.count()):
+            item = self.file_list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == video_path:
+                prefix = "✓" if success else "✗"
+                item.setText(f"{prefix} {item.text()[2:]}")  # 替换原有前缀
+                break
+
+    def _on_batch_finished(self, success: bool, completed: int, failed: int, total: int):
+        """批量处理完成"""
+        self.start_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
+
+        if success:
+            self.batch_progress_bar.setValue(100)
+            self.batch_status_label.setText(f"完成: {completed}/{total} 成功")
+            QMessageBox.information(self, "完成", f"批量处理完成！\n成功: {completed} 个\n失败: {failed} 个")
+        else:
+            self.batch_status_label.setText(f"中断: {completed} 成功, {failed} 失败")
+            QMessageBox.warning(self, "中断", f"批量处理中断\n成功: {completed} 个\n失败: {failed} 个")
+
+    def _on_batch_error(self, error_msg: str):
+        """批量处理错误"""
+        self.start_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
+        self._log(f"✗ 错误: {error_msg}")
+        QMessageBox.critical(self, "错误", error_msg)
 
     def closeEvent(self, event):
         """关闭窗口时保存配置"""
