@@ -76,6 +76,12 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(file_group)
 
+        # 新增: 工作区面板
+        from .widgets.workspace_panel import WorkspacePanel
+        self.workspace_panel = WorkspacePanel()
+        self.workspace_panel.stage_action.connect(self._on_stage_action)
+        layout.addWidget(self.workspace_panel)
+
         # 2. 配置面板（Tab）
         self.tabs = QTabWidget()
         self._setup_basic_tab()
@@ -349,6 +355,12 @@ class MainWindow(QMainWindow):
 
         self._update_file_count()
 
+        # 如果只添加了一个视频，更新工作区面板
+        if len(paths) == 1 and self.file_list.count() == 1:
+            video_path = paths[0]
+            pipeline = SubtitlePipeline(self.config)
+            self.workspace_panel.set_video(video_path, pipeline)
+
     def _clear_files(self):
         """清空列表"""
         self.file_list.clear()
@@ -525,3 +537,29 @@ class MainWindow(QMainWindow):
     def _log(self, message: str):
         """添加日志"""
         self.log_text.append(message)
+
+    def _on_stage_action(self, stage_id: str, action: str):
+        """处理阶段操作"""
+        video_path = None
+        if self.file_list.count() > 0:
+            video_path = self.file_list.item(0).data(Qt.ItemDataRole.UserRole)
+
+        if not video_path:
+            return
+
+        if action == "run":
+            self._log(f"执行阶段: {stage_id}")
+            # TODO: 启动阶段执行
+        elif action == "force_run":
+            reply = QMessageBox.question(
+                self, "确认",
+                f"强制重新执行 {stage_id} 将使下游阶段失效，是否继续？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self._log(f"强制重新执行阶段: {stage_id}")
+                # TODO: 启动强制重新执行
+        elif action == "view_input":
+            self._log(f"查看阶段输入: {stage_id}")
+        elif action == "view_output":
+            self._log(f"查看阶段输出: {stage_id}")
