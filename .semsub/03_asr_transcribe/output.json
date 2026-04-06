@@ -1,0 +1,20 @@
+{
+  "stage_id": "03_asr_transcribe",
+  "status": "completed",
+  "artifacts": {
+    "transcripts": {
+      "path": "transcripts.json",
+      "type": "json",
+      "size_bytes": null,
+      "checksum": null
+    }
+  },
+  "statistics": {
+    "total_segments": 48,
+    "total_words": 1943,
+    "avg_words_per_segment": 40.5
+  },
+  "started_at": "2026-04-07 02:47:28.405060",
+  "completed_at": "2026-04-07 02:48:07.684267",
+  "duration_ms": 39279
+}

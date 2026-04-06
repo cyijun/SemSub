@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "semsub"
+version = "1.0.0"
+description = "智能字幕生成器 - 支持 ASR 和 LLM 后处理"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "SemSub Team"}
+]
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "pydantic>=2.12.0",
+    "pyyaml>=6.0.3",
+    "aiohttp>=3.13.5",
+    "openai>=1.0,<2.0",
+    "PyQt6>=6.11.0",
+    "qasync>=0.28.0",
+    "keyring>=25.7.0",
+    "click>=8.3.0",
+    "rich>=14.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-qt>=4.0",
+    "pyinstaller>=6.0",
+]
+
+[project.scripts]
+semsub = "semsub.cli.main:cli"
+semsub-gui = "semsub.gui.app:main"
+
+[project.urls]
+Homepage = "https://github.com/semsub/semsub"
+Repository = "https://github.com/semsub/semsub"

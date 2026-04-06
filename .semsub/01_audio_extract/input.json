@@ -1,0 +1,7 @@
+{
+  "stage_id": "01_audio_extract",
+  "dependencies": {},
+  "parameters": {
+    "sample_rate": 16000
+  }
+}

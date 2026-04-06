@@ -1,0 +1,13 @@
+name: "纪录片"
+description: "适合纪录片旁白，较长静音间隔"
+vad:
+  threshold: 0.5
+  min_speech_duration_ms: 250
+  min_silence_duration_ms: 800
+subtitle:
+  max_chars: 35
+  max_chars_en: 70
+  max_duration: 7.0
+  min_duration: 1.5
+  gap_threshold: 0.5
+  target_reading_speed: 5.0

@@ -1,0 +1,22 @@
+{
+  "stage_id": "05_llm_postprocess",
+  "status": "completed",
+  "artifacts": {
+    "subtitles": {
+      "path": "subtitles.json",
+      "type": "json",
+      "size_bytes": null,
+      "checksum": null
+    }
+  },
+  "statistics": {
+    "enabled": true,
+    "total_lines": 71,
+    "changed_lines": 33,
+    "failed_lines": 0,
+    "change_ratio": 46.5
+  },
+  "started_at": "2026-04-07 02:48:07.772715",
+  "completed_at": "2026-04-07 02:48:48.267537",
+  "duration_ms": 40494
+}

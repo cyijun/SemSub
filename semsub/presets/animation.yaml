@@ -1,0 +1,13 @@
+name: "动画"
+description: "适合动画快语速"
+vad:
+  threshold: 0.5
+  min_speech_duration_ms: 200
+  min_silence_duration_ms: 200
+subtitle:
+  max_chars: 30
+  max_chars_en: 60
+  max_duration: 4.0
+  min_duration: 0.8
+  gap_threshold: 0.2
+  target_reading_speed: 8.0

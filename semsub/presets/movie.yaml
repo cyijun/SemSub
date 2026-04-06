@@ -1,0 +1,13 @@
+name: "电影"
+description: "适合电影对话，较短静音间隔"
+vad:
+  threshold: 0.5
+  min_speech_duration_ms: 250
+  min_silence_duration_ms: 300
+subtitle:
+  max_chars: 40
+  max_chars_en: 80
+  max_duration: 6.0
+  min_duration: 1.0
+  gap_threshold: 0.3
+  target_reading_speed: 6.0

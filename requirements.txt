@@ -1,0 +1,26 @@
+# 核心依赖
+pydantic>=2.12.0
+pyyaml>=6.0.3
+
+# 新增依赖（用于 LLM 和 GUI）
+aiohttp>=3.13.5
+openai>=1.0,<2.0
+PyQt6>=6.11.0
+qasync>=0.28.0
+keyring>=25.7.0
+
+# 音频/ASR（当前环境已安装，保持版本）
+torch==2.7.1
+torchaudio==2.7.1
+torchcodec==0.9.0
+qwen-asr==0.0.6
+silero-vad==6.2.1
+
+# CLI
+click>=8.3.0
+rich>=14.0.0
+
+# 可选（用于打包和开发）
+pyinstaller>=6.0
+pytest>=7.0
+pytest-qt>=4.0

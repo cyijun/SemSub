@@ -1,0 +1,27 @@
+{
+  "stage_id": "02_vad_split",
+  "status": "completed",
+  "artifacts": {
+    "segments": {
+      "path": "segments.json",
+      "type": "json",
+      "size_bytes": null,
+      "checksum": null
+    },
+    "audio_tensor": {
+      "path": "audio_tensor.pt",
+      "type": "pt",
+      "size_bytes": null,
+      "checksum": null
+    }
+  },
+  "statistics": {
+    "total_segments": 48,
+    "total_duration_sec": 440.2773125,
+    "speech_duration_sec": 374.4553125,
+    "speech_ratio_percent": 85.05
+  },
+  "started_at": "2026-04-07 02:47:20.363008",
+  "completed_at": "2026-04-07 02:47:28.386332",
+  "duration_ms": 8023
+}
