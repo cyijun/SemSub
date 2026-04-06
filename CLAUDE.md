@@ -4,155 +4,278 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a speech recognition and subtitle generation project (SemSub) that generates optimized movie subtitles using:
+SemSub is a speech recognition and subtitle generation project with both CLI and GUI interfaces. It generates optimized movie subtitles using:
 - **Qwen3-ASR-1.7B** for speech-to-text transcription
 - **Qwen3-ForcedAligner-0.6B** for word-level timestamp alignment
-- **Silero VAD** for voice activity detection and audio segmentation
-- **FFmpeg** for audio extraction from video files
+- **Silero VAD** for voice activity detection
+- **FFmpeg** for audio extraction
 
 ## Common Commands
 
 ### Run Tests
 ```bash
+python test_new_arch.py
 python test_subtitle_merger.py
 ```
 
-### Generate Subtitles for a Video
+### CLI - Generate Subtitles
 
-**Complete pipeline (recommended):**
+**Single video:**
 ```bash
-python generate_subtitles.py /path/to/video.mp4 -o output.srt -l Chinese
+python -m semsub.cli generate video.mp4
+python -m semsub.cli generate video.mp4 -o output.srt --preset movie
 ```
 
-**Simplified version:**
+**Batch directory processing:**
 ```bash
-python run_subtitle.py /path/to/video.mp4
+python -m semsub.cli generate ./movies/
+python -m semsub.cli generate ./season1/ ./season2/ --output-dir ./subtitles/
+python -m semsub.cli generate ./videos/ --skip-existing --continue-on-error
 ```
 
-**Step-by-step processing:**
+**Stage-specific execution:**
 ```bash
-python process_video.py /path/to/video.mp4
+# View status
+python -m semsub.cli status video.mp4
+
+# Run specific stage
+python -m semsub.cli run-stage video.mp4 03_asr_transcribe
+
+# Force re-run from a stage
+python -m semsub.cli run-stage video.mp4 04_subtitle_optimize --force
+
+# Execute range
+python -m semsub.cli generate video.mp4 --from 03_asr_transcribe --to 04_subtitle_optimize
 ```
 
-**Batch processing with shell script:**
+**Workspace management:**
 ```bash
-./run_batch.sh
+python -m semsub.cli init video.mp4
+python -m semsub.cli clean video.mp4          # Remove workspace
+python -m semsub.cli clean video.mp4 --all    # Include output files
 ```
 
-### Transcribe Existing Segments Only
+### GUI
 ```bash
-python transcribe_segments.py -i video_segments -o output.txt -b 16
+python -m semsub.gui.app
 ```
 
-### Quick Python API Usage
-```python
-from generate_subtitles import quick_generate
-srt_path = quick_generate(video_path='/path/to/video.mp4', language='Chinese')
+### Legacy Scripts (still functional)
+```bash
+python generate_subtitles.py video.mp4
+python run_subtitle.py video.mp4
 ```
 
 ## High-Level Architecture
 
-### Data Flow Pipeline
+### Package Structure
 
 ```
-Video File (.mp4)
-    ↓
-[Audio Extraction] ── FFmpeg ──→ WAV (16kHz, mono, 16-bit PCM)
-    ↓
-[VAD Splitting] ── Silero VAD ──→ Speech Segments (JSON)
-    ↓
-[Segment Merging] ── gap_threshold (0.3s) ──→ Merged Segments
-    ↓
-[ASR + Forced Align] ── Qwen3-ASR + ForcedAligner ──→ Word-level timestamps
-    ↓
-[Subtitle Optimization] ── SubtitleMerger ──→ Optimized subtitle lines
-    ↓
-[Output] ── SRT/VTT/TXT/JSON
+semsub/
+├── core/                    # Core business logic
+│   ├── pipeline.py          # SubtitlePipeline, StageExecutor
+│   ├── workspace.py         # WorkspaceManager, Workspace, StageContext
+│   ├── state_models.py      # Pydantic models for state persistence
+│   ├── config.py            # PipelineConfig dataclass
+│   ├── progress.py          # ProgressReporter interfaces
+│   ├── merger.py            # Subtitle optimization engine
+│   ├── models.py            # SubtitleLine data class
+│   ├── batch_scanner.py     # VideoScanner for directory input
+│   ├── batch_pipeline.py    # BatchPipeline for multi-video processing
+│   ├── stages/              # 5 processing stages
+│   │   ├── base.py          # PipelineStage abstract base
+│   │   ├── audio_extract.py # Stage 01: FFmpeg audio extraction
+│   │   ├── vad_split.py     # Stage 02: Silero VAD segmentation
+│   │   ├── asr_transcribe.py# Stage 03: Qwen ASR + forced alignment
+│   │   ├── subtitle_optimize.py  # Stage 04: SubtitleMerger
+│   │   └── llm_postprocess.py    # Stage 05: LLM correction/translation
+│   ├── llm/                 # LLM provider implementations
+│   └── utils/               # File I/O utilities
+├── cli/                     # Command-line interface
+│   ├── main.py              # CLI entry point
+│   └── commands/            # Subcommands (generate, status, run_stage, etc.)
+└── gui/                     # PyQt6 graphical interface
+    ├── app.py               # GUI entry point
+    ├── main_window.py       # Main window with batch processing
+    ├── workers/             # QThread workers
+    │   ├── pipeline_worker.py
+    │   └── batch_worker.py
+    └── widgets/             # Custom widgets
+        ├── stage_flow_widget.py
+        └── workspace_panel.py
 ```
 
-### Core Modules
+### Pipeline Stages
 
-| File | Purpose |
-|------|---------|
-| `subtitle_merger.py` | Core optimization engine. Handles VAD segment merging, intelligent sentence breaking, timing adjustment, and reading speed optimization. |
-| `generate_subtitles.py` | Complete subtitle generation pipeline with `MovieSubtitleGenerator` class and `SubtitleConfig` dataclass. |
-| `transcribe_segments.py` | Batch transcription of pre-segmented audio files with checkpoint/resume support. |
-| `run_subtitle.py` | Simplified end-to-end script for single video processing. |
-| `process_video.py` | Step-by-step processing with skip logic for existing files. |
+| Stage ID | Name | Input | Output | Dependencies |
+|----------|------|-------|--------|--------------|
+| 01_audio_extract | 音频提取 | video.mp4 | audio.wav | - |
+| 02_vad_split | VAD分割 | audio.wav | segments.json | 01 |
+| 03_asr_transcribe | ASR转录 | audio.wav, segments.json | transcripts.json | 02 |
+| 04_subtitle_optimize | 字幕优化 | segments.json, transcripts.json | subtitles.json | 02, 03 |
+| 05_llm_postprocess | LLM后处理 | subtitles.json | subtitles_llm.json | 04 |
 
-### Key Optimization Strategies (in SubtitleMerger)
+### Workspace System
 
-1. **VAD Segment Merging**: Merges adjacent segments with gaps < 0.3s (configurable via `gap_threshold`)
-2. **Intelligent Sentence Breaking**: Prioritizes breaking at sentence-ending punctuation (。！？.!?), then phrase punctuation (，,；;、)
-3. **Timing Adjustment**: Ensures minimum 1.0s and maximum 6.0s display duration per line
-4. **Reading Speed Control**: Targets 6.0 chars/second (Chinese) with adaptive adjustment
+Each video gets a `.semsub/` workspace directory for persistence:
 
-### Configuration Parameters
+```
+video.mp4
+.semsub/
+├── state.json               # Global workspace state
+├── config.yaml              # Config snapshot at creation
+├── 01_audio_extract/
+│   ├── state.json           # Stage status (pending/running/completed/failed)
+│   ├── input.json           # Dependencies and parameters
+│   ├── output.json          # Output artifacts and statistics
+│   └── audio.wav            # Actual artifact file
+├── 02_vad_split/
+│   ├── state.json
+│   ├── input.json
+│   ├── output.json
+│   └── segments.json
+└── ... (other stages)
+```
 
-Key defaults in `SubtitleConfig`:
+**Key classes:**
+- `WorkspaceManager`: Creates/opens workspaces, computes video hashes
+- `Workspace`: Represents a workspace, manages stage contexts, handles locking
+- `StageContext`: Per-stage I/O, artifact loading/saving, checkpoint management
+
+### Data Flow
+
+```
+Input (file or directory)
+    ↓
+[VideoScanner] ──→ List[VideoTask]
+    ↓
+[BatchPipeline] (if multiple videos)
+    ↓
+[SubtitlePipeline.generate()]
+    ↓
+[WorkspaceManager] ──→ Workspace
+    ↓
+For each stage in STAGE_ORDER:
+    [StageExecutor]
+        - Check dependencies
+        - Prepare input artifacts
+        - Execute stage implementation
+        - Save output artifacts
+        - Update state
+    ↓
+Export final subtitles
+```
+
+### Configuration System
+
+**Hierarchy** (highest to lowest priority):
+1. CLI arguments (`--language`, `--preset`)
+2. Project config (`./semsub.yaml`)
+3. User config (`~/.config/semsub/config.yaml`)
+4. Built-in preset defaults
+
+**Presets:**
+- `movie`: Dense dialogue (max_chars=40, gap_threshold=0.3s)
+- `documentary`: Narration (max_chars=35, gap_threshold=0.5s, min_silence=800ms)
+- `animation`: Fast speech (max_chars=30, max_duration=4.0s, gap_threshold=0.2s)
+
+### Key Configuration Parameters
+
 ```python
-max_chars = 40              # Chinese chars per line
-max_chars_en = 80           # English chars per line
-max_duration = 6.0          # Max display seconds per line
-min_duration = 1.0          # Min display seconds per line
-gap_threshold = 0.3         # VAD segment merge threshold (seconds)
-batch_size = 8              # ASR batch processing size
-vad_threshold = 0.5
-vad_min_speech_duration_ms = 250
-vad_min_silence_duration_ms = 500
+# ASR
+batch_size = 8              # Inference batch size
+language = None             # Auto-detect if None
+model_path = "/mnt/g/models/Qwen3-ASR-1.7B"
+aligner_path = "/mnt/g/models/Qwen3-ForcedAligner-0.6B"
+
+# VAD
+threshold = 0.5
+min_speech_duration_ms = 250
+min_silence_duration_ms = 500
+
+# Subtitle optimization
+max_chars = 40              # Chinese characters per line
+max_chars_en = 80           # English characters per line
+max_duration = 6.0          # Seconds per line
+min_duration = 1.0
+gap_threshold = 0.3         # Merge VAD segments closer than this
 ```
 
-### Model Paths
+### Progress Reporting
 
-Default model locations (configured in `SubtitleConfig`):
-- ASR Model: `/mnt/g/models/Qwen3-ASR-1.7B`
-- Aligner Model: `/mnt/g/models/Qwen3-ForcedAligner-0.6B`
-
-### Language Handling
-
-- Set `language=None` for automatic language detection
-- Supported: "Chinese", "English", "Japanese", etc.
-- Language affects character limits and reading speed calculations
-
-### Intermediate File Formats
-
-During processing, these files are generated:
-- `{video}.wav` - Extracted audio (16kHz mono)
-- `{video}.segments.json` - VAD speech segments with start/end timestamps
-- `{video}.transcription.json` - ASR results with word-level timestamps
-- `{video}.srt` - Final subtitle output
-- `{video}.checkpoint.json` - Resume progress for interrupted transcriptions
-
-### Scene-Based Configuration Tuning
-
-**Movies (dense dialogue):**
 ```python
-max_chars=40, max_duration=6.0, gap_threshold=0.3, vad_min_silence_duration_ms=300
+# CLI uses RichProgressReporter with live progress bars
+# GUI uses QtBatchReporter that emits signals to main thread
+
+class ProgressReporter:
+    def on_stage_start(self, stage: PipelineStage, total: int)
+    def on_progress(self, progress: StageProgress)
+    def on_stage_complete(self, stage: PipelineStage, result)
+    def on_error(self, stage: PipelineStage, error: Exception)
 ```
 
-**Documentaries (narration):**
+### Stage Implementation Pattern
+
 ```python
-max_chars=35, max_duration=7.0, gap_threshold=0.5, vad_min_silence_duration_ms=800
+class MyStage(PipelineStage):
+    name = "My Stage"
+    stage_id = "XX_stage_name"
+
+    def execute(self, ctx: StageContext, reporter=None) -> Dict[str, Any]:
+        # 1. Load input artifacts from dependencies
+        audio_path = ctx.resolve_input_artifact("audio")
+        segments = ctx.load_artifact("segments", from_input=True)
+
+        # 2. Load checkpoint if resumable
+        checkpoint = ctx.load_checkpoint()
+
+        # 3. Process
+        for i, item in enumerate(items):
+            # Report progress
+            if reporter:
+                reporter.on_progress(StageProgress(...))
+            # Save checkpoint periodically
+            ctx.save_checkpoint({"current": i})
+
+        # 4. Save output artifacts
+        output_path = ctx.save_artifact("results", data, "json")
+
+        # 5. Return output spec
+        return {
+            "artifacts": {"results": {"path": output_path.name}},
+            "statistics": {"total": len(items)}
+        }
 ```
 
-**Animation (fast speech):**
-```python
-max_chars=30, max_duration=4.0, gap_threshold=0.2, target_reading_speed=8.0
-```
+### Batch Processing
 
-## Dependencies
-
-Core packages (Python 3.12):
-```bash
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
-pip install qwen_asr silero-vad torchcodec
-```
-
-System requirement: FFmpeg installed and available in PATH.
+When directory input is provided:
+1. `VideoScanner.scan()` recursively finds all video files
+2. `VideoTask` objects created with input/output paths
+3. `BatchPipeline.process()` executes serially:
+   - One video at a time (predictable resource usage)
+   - Per-video progress aggregated into batch progress
+   - `--continue-on-error`: continue to next video on failure
+   - `--skip-existing`: skip videos that already have output subtitles
 
 ## Development Notes
 
-- Comments and documentation are primarily in Chinese
+- Comments and docs are primarily in Chinese
 - Variable names use English
-- GPU (CUDA) is strongly recommended for ASR model inference
-- The codebase uses `torch.bfloat16` for memory efficiency
+- Uses `torch.bfloat16` for memory efficiency
+- GPU strongly recommended for ASR inference
+- File locking via `fcntl.flock` prevents concurrent workspace access
+- Atomic file writes via temp file + rename pattern
+- Video file hash computed from first 1MB + size + mtime for change detection
+
+## Dependencies
+
+```bash
+# PyTorch with CUDA
+pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
+
+# Core dependencies
+pip install qwen-asr silero-vad torchcodec PyQt6 openai click rich pyyaml pydantic
+
+# System requirement: FFmpeg in PATH
+```

@@ -1,0 +1,94 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Project specific - Video files
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.webm
+*.m4v
+*.flv
+*.wmv
+*.wav
+*.mp3
+*.aac
+*.flac
+
+# Project specific - Subtitle files
+*.srt
+*.vtt
+*.ass
+*.ssa
+
+# Project specific - Workspace & temp directories
+.semsub/
+**/.semsub/
+*.checkpoint.json
+*.segments.json
+*.transcription.json
+
+# Project specific - Legacy scripts (excluded as requested)
+generate_subtitles.py
+run_subtitle.py
+process_video.py
+transcribe_segments.py
+run_batch.sh
+install.sh
+
+# Project specific - Test/Debug scripts
+test_*.py
+
+# Project specific - Notebooks
+*.ipynb
+
+# Documentation drafts (keep only main README.md)
+README_SUBTITLE.md
+WORKFLOW.md
+AGENTS.md
+llm_api_and_key.md
+
+# Local config with sensitive data
+semsub.yaml
+
+# Python cache
+**/__pycache__/
+*.pyc
+
+# Docs (design docs not needed for distribution)
+docs/
+
+# Logs
+*.log
