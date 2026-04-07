@@ -59,11 +59,16 @@ class MainWindow(QMainWindow):
     def _init_modules(self):
         """初始化各功能模块"""
         from .modules.generate_module import GenerateModule
+        from .modules.process_srt_module import ProcessSRTModule
         from .modules.status_module import StatusModule
 
         # 字幕生成模块
         self.generate_module = GenerateModule()
         self.content_stack.addWidget(self.generate_module)
+
+        # 字幕处理模块
+        self.process_srt_module = ProcessSRTModule()
+        self.content_stack.addWidget(self.process_srt_module)
 
         # 工作区状态模块
         self.status_module = StatusModule()
@@ -81,5 +86,5 @@ class MainWindow(QMainWindow):
 
     def _on_module_changed(self, module_id: str):
         """切换模块"""
-        index = ["generate", "status", "execution", "config"].index(module_id)
+        index = ["generate", "process_srt", "status", "execution", "config"].index(module_id)
         self.content_stack.setCurrentIndex(index)

@@ -43,6 +43,7 @@ class NavigationSidebar(QFrame):
     
     MODULES = [
         ("generate", "🎬", "字幕生成"),
+        ("process_srt", "📝", "字幕处理"),
         ("status", "📊", "工作区状态"),
         ("execution", "⚙️", "阶段执行"),
         ("config", "🔧", "配置管理"),
