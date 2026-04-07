@@ -68,6 +68,9 @@ transcribe_segments.py
 run_batch.sh
 install.sh
 
+# Legacy subtitle merger (not tracked)
+subtitle_merger.py
+
 # Project specific - Test/Debug scripts
 test_*.py
 
