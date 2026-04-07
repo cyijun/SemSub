@@ -11,6 +11,7 @@ from .commands.status import status
 from .commands.run_stage import run_stage
 from .commands.init import init
 from .commands.clean import clean
+from .commands.process_srt import process_srt
 
 
 @click.group()
@@ -29,6 +30,7 @@ cli.add_command(status)
 cli.add_command(run_stage)
 cli.add_command(init)
 cli.add_command(clean)
+cli.add_command(process_srt)
 
 
 if __name__ == "__main__":
