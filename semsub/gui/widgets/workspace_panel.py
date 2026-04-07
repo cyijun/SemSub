@@ -147,8 +147,8 @@ class WorkspacePanel(QGroupBox):
         self.open_folder_btn.setEnabled(True)
 
         # 创建工作区
-        manager = WorkspaceManager(config)
-        self.workspace = manager.get_workspace(video_path)
+        manager = WorkspaceManager(video_path)
+        self.workspace = manager.open_or_initialize(config)
 
         self.refresh_status()
 
@@ -186,7 +186,7 @@ class WorkspacePanel(QGroupBox):
         # 获取阶段状态
         if self.workspace:
             try:
-                stage_context = self.workspace.get_stage_context(stage_id)
+                stage_context = self.workspace.get_stage(stage_id)
                 stage_state = stage_context.get_state()
 
                 self.detail_status.setText(f"状态: {stage_state.status.value}")
@@ -329,7 +329,7 @@ class WorkspacePanel(QGroupBox):
 
         missing = []
         for dep_id in deps_map.get(stage_id, []):
-            stage_context = self.workspace.get_stage_context(dep_id)
+            stage_context = self.workspace.get_stage(dep_id)
             if stage_context.get_state().status != StageStatus.COMPLETED:
                 missing.append(self.STAGE_NAMES.get(dep_id, dep_id))
 

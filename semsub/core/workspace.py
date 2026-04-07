@@ -605,18 +605,27 @@ class WorkspaceManager:
             return
 
         if keep_output:
-            # 只保留最终字幕文件
+            # 收集需要保留的文件
+            preserved_files = []
+            temp_dir = tempfile.mkdtemp()
+
             for ext in (".srt", ".vtt", ".json"):
                 output_file = self.video_path.with_suffix(ext)
                 if output_file.exists():
-                    # 临时移动出去
-                    temp_dir = tempfile.mkdtemp()
-                    shutil.move(str(output_file), temp_dir)
+                    temp_path = Path(temp_dir) / output_file.name
+                    shutil.move(str(output_file), str(temp_path))
+                    preserved_files.append((temp_path, output_file))
 
             shutil.rmtree(self.workspace_dir, ignore_errors=True)
 
-            # 移回来
-            # TODO: 实现这个逻辑
+            # 恢复文件到原始位置
+            for temp_path, original_path in preserved_files:
+                if temp_path.exists():
+                    shutil.move(str(temp_path), str(original_path))
+
+            # 清理临时目录
+            if Path(temp_dir).exists():
+                shutil.rmtree(temp_dir, ignore_errors=True)
         else:
             shutil.rmtree(self.workspace_dir, ignore_errors=True)
 

@@ -49,11 +49,13 @@ class StageWorker(QThread):
                 raise ValueError(f"未知的阶段 ID: {self.stage_id}")
 
             # 创建工作区
-            manager = WorkspaceManager(self.config)
-            workspace = manager.get_workspace(self.video_path)
+            manager = WorkspaceManager(self.video_path)
+            workspace = manager.open()
+            if workspace is None:
+                workspace = manager.initialize(self.config)
 
             # 获取或创建阶段上下文
-            stage_context = workspace.get_stage_context(self.stage_id)
+            stage_context = workspace.get_stage(self.stage_id)
 
             # 检查依赖
             if not self.force:
@@ -133,7 +135,7 @@ class StageWorker(QThread):
 
         missing = []
         for dep_id in deps_map.get(stage_id, []):
-            stage_context = workspace.get_stage_context(dep_id)
+            stage_context = workspace.get_stage(dep_id)
             if stage_context.get_state().status != StageStatus.COMPLETED:
                 missing.append(dep_id)
 
