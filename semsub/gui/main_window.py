@@ -74,10 +74,10 @@ class MainWindow(QMainWindow):
         self.execution_module = ExecutionModule()
         self.content_stack.addWidget(self.execution_module)
 
-        # 配置管理模块占位
-        placeholder = QLabel("config 模块开发中...")
-        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.content_stack.addWidget(placeholder)
+        # 配置管理模块
+        from .modules.config_module import ConfigModule
+        self.config_module = ConfigModule()
+        self.content_stack.addWidget(self.config_module)
 
     def _on_module_changed(self, module_id: str):
         """切换模块"""
