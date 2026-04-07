@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QLabel, QListWidget, QListWidgetItem,
     QProgressBar, QTextEdit, QGroupBox, QFormLayout,
     QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox,
-    QLineEdit, QTabWidget
+    QLineEdit, QTabWidget, QFileDialog, QMessageBox
 )
 from PyQt6.QtCore import Qt
 

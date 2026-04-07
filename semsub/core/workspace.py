@@ -70,7 +70,11 @@ class FileLock:
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
         self.fd = open(self.lock_path, "w")
 
-        if self.timeout > 0:
+        # 信号只能在主线程使用，检查当前线程
+        import threading
+        use_signal = self.timeout > 0 and threading.current_thread() is threading.main_thread()
+
+        if use_signal:
             import signal
 
             def timeout_handler(signum, frame):
@@ -82,7 +86,7 @@ class FileLock:
         try:
             fcntl.flock(self.fd.fileno(), fcntl.LOCK_EX)
         finally:
-            if self.timeout > 0:
+            if use_signal:
                 signal.alarm(0)
 
         return self
