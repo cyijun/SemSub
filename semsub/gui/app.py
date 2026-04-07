@@ -6,6 +6,7 @@ import sys
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFont, QFontDatabase
 from .main_window import MainWindow
+from .styles.dark_theme import apply_dark_theme
 
 
 def setup_fonts():
@@ -53,6 +54,9 @@ def main():
 
     # 设置中文字体
     setup_fonts()
+
+    # 应用深色主题
+    apply_dark_theme(app)
 
     window = MainWindow()
     window.show()
