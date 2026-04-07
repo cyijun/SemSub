@@ -344,36 +344,38 @@ class ConfigModule(QWidget):
 
     def _on_preset_selected(self, preset_name: str):
         """预设选择改变"""
-        presets = self.config_manager.list_presets()
-        if preset_name in presets:
-            preset = presets[preset_name]
+        preset_data = self.config_manager.load_preset(preset_name)
+        if preset_data:
+            vad = preset_data.get("vad", {})
+            subtitle = preset_data.get("subtitle", {})
+            asr = preset_data.get("asr", {})
             details = f"""
 名称: {preset_name}
 
 VAD:
-  - 阈值: {preset.vad.threshold}
-  - 最小语音时长: {preset.vad.min_speech_duration_ms}ms
-  - 最小静音时长: {preset.vad.min_silence_duration_ms}ms
+  - 阈值: {vad.get("threshold", "N/A")}
+  - 最小语音时长: {vad.get("min_speech_duration_ms", "N/A")}ms
+  - 最小静音时长: {vad.get("min_silence_duration_ms", "N/A")}ms
 
 字幕:
-  - 最大字符数: {preset.subtitle.max_chars}
-  - 最大时长: {preset.subtitle.max_duration}s
+  - 最大字符数: {subtitle.get("max_chars", "N/A")}
+  - 最大时长: {subtitle.get("max_duration", "N/A")}s
 
 ASR:
-  - 批次大小: {preset.asr.batch_size}
+  - 批次大小: {asr.get("batch_size", "N/A")}
             """
             self.preset_details.setText(details.strip())
 
     def _apply_preset(self):
         """应用选中的预设"""
         preset_name = self.preset_list.currentText()
-        preset = self.config_manager.load_preset(preset_name)
-        if preset:
-            # 应用预设到当前配置
-            self.config_manager.save_user_config(preset)
-            self.config = preset
-            self._refresh_config_tree()
-            QMessageBox.information(self, "完成", f"已应用预设: {preset_name}")
+        # 使用 load() 方法加载预设并合并到配置
+        new_config = self.config_manager.load(preset=preset_name)
+        # 保存为用户配置
+        self.config_manager.save_user_config(new_config)
+        self.config = new_config
+        self._refresh_config_tree()
+        QMessageBox.information(self, "完成", f"已应用预设: {preset_name}")
 
     def _export_config(self):
         """导出配置"""
@@ -383,7 +385,10 @@ ASR:
         )
         if file_path:
             try:
-                self.config_manager.export_config(Path(file_path))
+                import shutil
+                config = self.config_manager.load()
+                self.config_manager.save_user_config(config)
+                shutil.copy(self.config_manager.user_config_file, Path(file_path))
                 QMessageBox.information(self, "完成", f"配置已导出到:\n{file_path}")
             except Exception as e:
                 QMessageBox.critical(self, "错误", f"导出失败: {e}")
@@ -396,10 +401,13 @@ ASR:
         )
         if file_path:
             try:
-                self.config_manager.import_config(
-                    Path(file_path),
-                    target=target  # type: ignore
-                )
+                import shutil
+                source = Path(file_path)
+                if target == "user":
+                    self.config_manager.user_config_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.copy(source, self.config_manager.user_config_file)
+                else:
+                    shutil.copy(source, self.config_manager.project_config_file)
                 self.config = self.config_manager.load()
                 self._refresh_config_tree()
                 QMessageBox.information(self, "完成", "配置已导入！")
