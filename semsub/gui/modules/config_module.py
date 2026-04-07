@@ -104,15 +104,27 @@ class ConfigWizard(QWizard):
         """ASR 配置页"""
         page = QWizardPage()
         page.setTitle("步骤 3/4: ASR 配置")
-        page.setSubTitle("配置语音识别参数")
+        page.setSubTitle("配置语音识别参数和模型路径")
 
         layout = QFormLayout(page)
 
+        # ASR 模型路径
+        self.wizard_asr_model_path = QLineEdit(self.config.asr.model_path or "")
+        self.wizard_asr_model_path.setPlaceholderText("/mnt/g/models/Qwen3-ASR-1.7B")
+        layout.addRow("ASR 模型路径:", self.wizard_asr_model_path)
+
+        # 对齐模型路径
+        self.wizard_aligner_path = QLineEdit(self.config.asr.aligner_path or "")
+        self.wizard_aligner_path.setPlaceholderText("/mnt/g/models/Qwen3-ForcedAligner-0.6B")
+        layout.addRow("对齐模型路径:", self.wizard_aligner_path)
+
+        # 批次大小
         self.wizard_batch_size = QSpinBox()
         self.wizard_batch_size.setRange(1, 32)
         self.wizard_batch_size.setValue(self.config.asr.batch_size)
         layout.addRow("批次大小:", self.wizard_batch_size)
 
+        # 语言
         self.wizard_language = QComboBox()
         self.wizard_language.addItems(["自动检测", "中文", "English", "日本語"])
         layout.addRow("语言:", self.wizard_language)
@@ -155,6 +167,8 @@ class ConfigWizard(QWizard):
         config.subtitle.max_duration = self.wizard_max_duration.value()
 
         # ASR
+        config.asr.model_path = self.wizard_asr_model_path.text() or config.asr.model_path
+        config.asr.aligner_path = self.wizard_aligner_path.text() or config.asr.aligner_path
         config.asr.batch_size = self.wizard_batch_size.value()
 
         location = "user" if self.save_location.currentIndex() == 0 else "project"
@@ -330,6 +344,8 @@ class ConfigModule(QWidget):
 
         # ASR
         asr_item = QTreeWidgetItem(["asr", ""])
+        asr_item.addChild(QTreeWidgetItem(["model_path", str(config.asr.model_path)]))
+        asr_item.addChild(QTreeWidgetItem(["aligner_path", str(config.asr.aligner_path)]))
         asr_item.addChild(QTreeWidgetItem(["batch_size", str(config.asr.batch_size)]))
         asr_item.addChild(QTreeWidgetItem(["language", str(config.asr.language)]))
         self.config_tree.addTopLevelItem(asr_item)
