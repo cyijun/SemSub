@@ -95,3 +95,6 @@ docs/
 
 # Logs
 *.log
+
+# Worktrees
+.worktrees/
