@@ -58,10 +58,14 @@ class MainWindow(QMainWindow):
 
     def _init_modules(self):
         """初始化各功能模块"""
-        # 将在后续 task 中实现
-        # 暂时创建占位 widget
-        
-        for module_id in ["generate", "status", "execution", "config"]:
+        from .modules.generate_module import GenerateModule
+
+        # 字幕生成模块
+        self.generate_module = GenerateModule()
+        self.content_stack.addWidget(self.generate_module)
+
+        # 其他模块占位
+        for module_id in ["status", "execution", "config"]:
             placeholder = QLabel(f"{module_id} 模块开发中...")
             placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.content_stack.addWidget(placeholder)
