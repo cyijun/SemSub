@@ -59,9 +59,29 @@ python -m semsub.cli generate video.mp4
 
 ### 2. Launch GUI
 
+**Gradio Web GUI (Recommended):**
+```bash
+python -m semsub gui
+```
+
+Then open http://localhost:7860 in your browser.
+
+**Features:**
+- File path input (no upload required, supports large files)
+- 5 pages: Quick Start, Batch Processing, SRT Processing, Workspaces, Settings
+- Real-time progress display and log output
+- Complete ASR/VAD/Subtitle/LLM configuration
+
+**Legacy PyQt6 GUI:**
 ```bash
 python -m semsub.gui.app
 ```
+
+**GUI Usage Flow:**
+1. Enter video file path in the text box (e.g., `/path/to/movie.mp4`)
+2. Click "Refresh List" to load file information
+3. Select scene preset and configure options (optional)
+4. Click "Generate Subtitles" to start processing
 
 ### 3. Batch Process a Directory
 
@@ -396,26 +416,36 @@ python -m semsub.cli generate video.mp4 --llm --llm-mode bilingual
 
 ## GUI Usage
 
-Launch the graphical interface:
+**Gradio Web GUI (Recommended):**
+
+```bash
+python -m semsub gui
+```
+
+Then open http://localhost:7860 in your browser.
+
+### Interface Features
+
+1. **File Path Input**: Enter video file paths directly (no upload required)
+2. **Batch Processing**: Add multiple files to queue
+3. **Real-time Progress**: Progress bars and stage status
+4. **Settings**: Configure ASR/VAD/Subtitle/LLM parameters
+5. **Workspace Management**: View and manage processing workspaces
+
+### Usage Flow
+
+1. **Quick Start**: Enter video path(s), configure options, click "Generate Subtitles"
+2. **Batch Processing**: Add multiple video paths, configure batch settings
+3. **SRT Processing**: Upload existing SRT files for LLM correction/translation
+4. **Settings**: Adjust ASR models, VAD parameters, subtitle optimization, LLM config
+
+**Legacy PyQt6 GUI:**
 
 ```bash
 python -m semsub.gui.app
 ```
 
-### Interface Features
-
-1. **File Selection**: Drag-drop or click to select video files/directories
-2. **Batch List**: Display queue of pending videos
-3. **Dual Progress Bars**: Overall progress + current video progress
-4. **Stage Visualization**: Status display for 5 processing stages
-5. **Real-time Log**: View processing logs
-
-### Usage Flow
-
-1. Click "Add Files" or "Add Directory" to select videos
-2. Select preset configuration (optional)
-3. Check "Enable LLM" and configure (optional)
-4. Click "Start Processing"
+Note: PyQt6 GUI is no longer maintained. Please use Gradio Web GUI.
 
 ## Python API
 
@@ -570,7 +600,17 @@ semsub/
 │   ├── llm/                 # LLM interfaces
 │   └── prompts/             # Prompt templates
 ├── cli/                     # Command-line interface
-├── gui/                     # PyQt6 graphical interface
+├── gradio_gui/              # Gradio Web GUI (recommended)
+│   ├── app.py               # Gradio app entry
+│   ├── pages/               # Page modules
+│   │   ├── home.py          # Quick start page
+│   │   ├── batch.py         # Batch processing page
+│   │   ├── srt_process.py   # SRT processing page
+│   │   ├── workspaces.py    # Workspace management
+│   │   └── settings.py      # Settings page
+│   ├── state.py             # Global state management
+│   └── utils.py             # Utility functions
+├── gui/                     # PyQt6 graphical interface (legacy)
 └── presets/                 # Scene presets
 ```
 
@@ -580,8 +620,11 @@ semsub/
 - PyTorch 2.7.1 + CUDA 12.8
 - qwen-asr 0.0.6
 - silero-vad 6.2.1
-- PyQt6 6.11.0
+- gradio 6.x (Web GUI)
 - openai 1.109.1
+
+**Optional:**
+- playwright + pytest-playwright (for GUI testing)
 
 ## License
 
