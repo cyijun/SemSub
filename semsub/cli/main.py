@@ -12,6 +12,7 @@ from .commands.run_stage import run_stage
 from .commands.init import init
 from .commands.clean import clean
 from .commands.process_srt import process_srt
+from .commands.gui import gui
 
 
 @click.group()
@@ -31,6 +32,7 @@ cli.add_command(run_stage)
 cli.add_command(init)
 cli.add_command(clean)
 cli.add_command(process_srt)
+cli.add_command(gui)
 
 
 if __name__ == "__main__":
