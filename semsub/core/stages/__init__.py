@@ -6,6 +6,12 @@ from .vad_split import VADSplitStage
 from .asr_transcribe import ASRTranscribeStage
 from .subtitle_optimize import SubtitleOptimizeStage
 from .llm_postprocess import LLMPostprocessStage
+from .constants import (
+    STAGE_ORDER,
+    STAGE_DEPENDENCIES,
+    STAGE_NAMES,
+    STAGE_TO_ENUM_MAP,
+)
 
 __all__ = [
     "PipelineStageBase",
@@ -14,4 +20,8 @@ __all__ = [
     "ASRTranscribeStage",
     "SubtitleOptimizeStage",
     "LLMPostprocessStage",
+    "STAGE_ORDER",
+    "STAGE_DEPENDENCIES",
+    "STAGE_NAMES",
+    "STAGE_TO_ENUM_MAP",
 ]

@@ -6,6 +6,8 @@ ASR 转录阶段 - 使用 Qwen3-ASR
 from pathlib import Path
 from typing import Optional, List, Dict
 import shutil
+import tempfile
+import atexit
 
 import torch
 import torchaudio
@@ -123,78 +125,82 @@ class ASRTranscribeStage(WorkspacePipelineStage):
             reporter.on_log(f"开始转录 {len(segments)} 个片段")
 
         transcript_segments = []
-        temp_dir = ctx.stage_dir / "temp_segments"
-        temp_dir.mkdir(exist_ok=True)
 
-        try:
-            # 分批处理
-            batch_size = self.config.batch_size
-            total_segments = len(segments)
+        # 使用 TemporaryDirectory 确保临时文件被清理
+        with tempfile.TemporaryDirectory(prefix="asr_segments_") as temp_dir_str:
+            temp_dir = Path(temp_dir_str)
 
-            for batch_start in range(0, total_segments, batch_size):
-                # 检查是否已取消
-                if reporter:
-                    reporter.check_cancelled()
+            # 注册兜底清理（防止进程被强制终止）
+            atexit.register(_cleanup_temp_dir, temp_dir)
 
-                batch_end = min(batch_start + batch_size, total_segments)
-                batch_segments = segments[batch_start:batch_end]
-                batch_num = batch_start // batch_size + 1
-                total_batches = (total_segments - 1) // batch_size + 1
+            try:
+                # 分批处理
+                batch_size = self.config.batch_size
+                total_segments = len(segments)
 
-                if reporter:
-                    reporter.on_progress(StageProgress.create(
-                        PipelineStage.ASR_TRANSCRIBE,
-                        batch_start,
-                        total_segments,
-                        f"处理批次 {batch_num}/{total_batches}"
-                    ))
+                for batch_start in range(0, total_segments, batch_size):
+                    # 检查是否已取消
+                    if reporter:
+                        reporter.check_cancelled()
 
-                # 准备音频文件
-                batch_files = []
-                for seg in batch_segments:
-                    start_sample = int(seg['start'] * sample_rate)
-                    end_sample = int(seg['end'] * sample_rate)
-                    seg_wav = wav[start_sample:end_sample]
-                    seg_file = temp_dir / f"seg_{seg['index']:04d}.wav"
-                    torchaudio.save(str(seg_file), seg_wav.unsqueeze(0).cpu(), sample_rate)
-                    batch_files.append((seg_file, seg))
+                    batch_end = min(batch_start + batch_size, total_segments)
+                    batch_segments = segments[batch_start:batch_end]
+                    batch_num = batch_start // batch_size + 1
+                    total_batches = (total_segments - 1) // batch_size + 1
 
-                # 批量 ASR
-                language = self.config.language
-                results = self.model.transcribe(
-                    audio=[str(f[0]) for f in batch_files],
-                    language=[language] * len(batch_files) if language else [None] * len(batch_files),
-                    return_time_stamps=True,
-                )
+                    if reporter:
+                        reporter.on_progress(StageProgress.create(
+                            PipelineStage.ASR_TRANSCRIBE,
+                            batch_start,
+                            total_segments,
+                            f"处理批次 {batch_num}/{total_batches}"
+                        ))
 
-                # 处理结果，保留完整文本和字级时间戳（含标点）
-                for (seg_file, seg), result in zip(batch_files, results):
-                    words = self._process_asr_result(result, seg)
+                    # 准备音频文件
+                    batch_files = []
+                    for seg in batch_segments:
+                        start_sample = int(seg['start'] * sample_rate)
+                        end_sample = int(seg['end'] * sample_rate)
+                        seg_wav = wav[start_sample:end_sample]
+                        seg_file = temp_dir / f"seg_{seg['index']:04d}.wav"
+                        torchaudio.save(str(seg_file), seg_wav.unsqueeze(0).cpu(), sample_rate)
+                        batch_files.append((seg_file, seg))
 
-                    # 保存完整文本（含标点）和字级时间戳
-                    full_text = result.text if hasattr(result, 'text') and result.text else "".join(w.text for w in words)
-                    transcript_segments.append(TranscriptSegment(
-                        start=seg['start'],
-                        end=seg['end'],
-                        text=full_text,
-                        words=words,
-                    ))
+                    # 批量 ASR
+                    language = self.config.language
+                    results = self.model.transcribe(
+                        audio=[str(f[0]) for f in batch_files],
+                        language=[language] * len(batch_files) if language else [None] * len(batch_files),
+                        return_time_stamps=True,
+                    )
 
-                # 保存检查点
-                ctx.save_checkpoint({
-                    "processed_count": len(transcript_segments),
-                    "transcript_segments": [self._segment_to_dict(s) for s in transcript_segments],
-                    "batch_size": batch_size,
-                    "last_processed_index": batch_end - 1,
-                })
+                    # 处理结果，保留完整文本和字级时间戳（含标点）
+                    for (seg_file, seg), result in zip(batch_files, results):
+                        words = self._process_asr_result(result, seg)
 
-        except CancellationError:
-            raise
+                        # 保存完整文本（含标点）和字级时间戳
+                        full_text = result.text if hasattr(result, 'text') and result.text else "".join(w.text for w in words)
+                        transcript_segments.append(TranscriptSegment(
+                            start=seg['start'],
+                            end=seg['end'],
+                            text=full_text,
+                            words=words,
+                        ))
 
-        finally:
-            # 清理临时文件
-            if temp_dir.exists():
-                shutil.rmtree(temp_dir, ignore_errors=True)
+                    # 保存检查点
+                    ctx.save_checkpoint({
+                        "processed_count": len(transcript_segments),
+                        "transcript_segments": [self._segment_to_dict(s) for s in transcript_segments],
+                        "batch_size": batch_size,
+                        "last_processed_index": batch_end - 1,
+                    })
+
+            except CancellationError:
+                raise
+
+            finally:
+                # 取消注册兜底清理（正常退出时）
+                atexit.unregister(_cleanup_temp_dir)
 
         # 按时间排序
         transcript_segments.sort(key=lambda s: s.start)
@@ -254,69 +260,70 @@ class ASRTranscribeStage(WorkspacePipelineStage):
 
         self._load_model()
 
-        temp_dir = ctx.stage_dir / "temp_segments"
-        temp_dir.mkdir(exist_ok=True)
+        # 使用 TemporaryDirectory 确保临时文件被清理
+        with tempfile.TemporaryDirectory(prefix="asr_segments_") as temp_dir_str:
+            temp_dir = Path(temp_dir_str)
+            atexit.register(_cleanup_temp_dir, temp_dir)
 
-        try:
-            # 从断点继续处理
-            start_index = last_processed + 1
-            total_segments = len(segments)
+            try:
+                # 从断点继续处理
+                start_index = last_processed + 1
+                total_segments = len(segments)
 
-            for batch_start in range(start_index, total_segments, batch_size):
-                if reporter:
-                    reporter.check_cancelled()
+                for batch_start in range(start_index, total_segments, batch_size):
+                    if reporter:
+                        reporter.check_cancelled()
 
-                batch_end = min(batch_start + batch_size, total_segments)
-                batch_segments = segments[batch_start:batch_end]
+                    batch_end = min(batch_start + batch_size, total_segments)
+                    batch_segments = segments[batch_start:batch_end]
 
-                if reporter:
-                    reporter.on_progress(StageProgress.create(
-                        PipelineStage.ASR_TRANSCRIBE,
-                        batch_start,
-                        total_segments,
-                        f"恢复处理: 批次 {batch_start // batch_size + 1}/{(total_segments - 1) // batch_size + 1}"
-                    ))
+                    if reporter:
+                        reporter.on_progress(StageProgress.create(
+                            PipelineStage.ASR_TRANSCRIBE,
+                            batch_start,
+                            total_segments,
+                            f"恢复处理: 批次 {batch_start // batch_size + 1}/{(total_segments - 1) // batch_size + 1}"
+                        ))
 
-                # 准备音频文件
-                batch_files = []
-                for seg in batch_segments:
-                    start_sample = int(seg['start'] * sample_rate)
-                    end_sample = int(seg['end'] * sample_rate)
-                    seg_wav = wav[start_sample:end_sample]
-                    seg_file = temp_dir / f"seg_{seg['index']:04d}.wav"
-                    torchaudio.save(str(seg_file), seg_wav.unsqueeze(0).cpu(), sample_rate)
-                    batch_files.append((seg_file, seg))
+                    # 准备音频文件
+                    batch_files = []
+                    for seg in batch_segments:
+                        start_sample = int(seg['start'] * sample_rate)
+                        end_sample = int(seg['end'] * sample_rate)
+                        seg_wav = wav[start_sample:end_sample]
+                        seg_file = temp_dir / f"seg_{seg['index']:04d}.wav"
+                        torchaudio.save(str(seg_file), seg_wav.unsqueeze(0).cpu(), sample_rate)
+                        batch_files.append((seg_file, seg))
 
-                # 批量 ASR
-                language = self.config.language
-                results = self.model.transcribe(
-                    audio=[str(f[0]) for f in batch_files],
-                    language=[language] * len(batch_files) if language else [None] * len(batch_files),
-                    return_time_stamps=True,
-                )
+                    # 批量 ASR
+                    language = self.config.language
+                    results = self.model.transcribe(
+                        audio=[str(f[0]) for f in batch_files],
+                        language=[language] * len(batch_files) if language else [None] * len(batch_files),
+                        return_time_stamps=True,
+                    )
 
-                # 处理结果
-                for (seg_file, seg), result in zip(batch_files, results):
-                    words = self._process_asr_result(result, seg)
-                    full_text = result.text if hasattr(result, 'text') and result.text else "".join(w.text for w in words)
-                    transcript_segments.append(TranscriptSegment(
-                        start=seg['start'],
-                        end=seg['end'],
-                        text=full_text,
-                        words=words,
-                    ))
+                    # 处理结果
+                    for (seg_file, seg), result in zip(batch_files, results):
+                        words = self._process_asr_result(result, seg)
+                        full_text = result.text if hasattr(result, 'text') and result.text else "".join(w.text for w in words)
+                        transcript_segments.append(TranscriptSegment(
+                            start=seg['start'],
+                            end=seg['end'],
+                            text=full_text,
+                            words=words,
+                        ))
 
-                # 更新检查点
-                ctx.save_checkpoint({
-                    "processed_count": len(transcript_segments),
-                    "transcript_segments": [self._segment_to_dict(s) for s in transcript_segments],
-                    "batch_size": batch_size,
-                    "last_processed_index": batch_end - 1,
-                })
+                    # 更新检查点
+                    ctx.save_checkpoint({
+                        "processed_count": len(transcript_segments),
+                        "transcript_segments": [self._segment_to_dict(s) for s in transcript_segments],
+                        "batch_size": batch_size,
+                        "last_processed_index": batch_end - 1,
+                    })
 
-        finally:
-            if temp_dir.exists():
-                shutil.rmtree(temp_dir, ignore_errors=True)
+            finally:
+                atexit.unregister(_cleanup_temp_dir)
 
         # 按时间排序
         transcript_segments.sort(key=lambda s: s.start)
@@ -431,3 +438,18 @@ class ASRTranscribeStage(WorkspacePipelineStage):
             del self.model
             self.model = None
         torch.cuda.empty_cache()
+
+
+def _cleanup_temp_dir(temp_dir: Path):
+    """
+    兜底清理函数 - 在进程退出时清理临时目录
+
+    注意：此函数通过 atexit 注册，用于处理进程被强制终止的情况。
+    正常流程中，TemporaryDirectory 的上下文管理器会处理清理。
+    """
+    try:
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+    except Exception:
+        # 清理失败不应影响主流程
+        pass

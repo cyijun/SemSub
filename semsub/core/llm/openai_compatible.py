@@ -48,11 +48,18 @@ class OpenAICompatibleProvider(LLMProvider):
 
     async def health_check(self) -> bool:
         """健康检查"""
+        import logging
+        logger = logging.getLogger(__name__)
+
         try:
             # 简单测试：调用 models 列表
             await self.client.models.list()
             return True
-        except Exception:
+        except APIError as e:
+            logger.warning(f"LLM 健康检查失败 (API 错误): {e}")
+            return False
+        except Exception as e:
+            logger.error(f"LLM 健康检查失败 (意外错误): {type(e).__name__}: {e}")
             return False
 
     def _parse_response(

@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Callable, Any
 from enum import Enum
 import threading
+import queue
+import time
 
 
 class JobStatus(Enum):
@@ -80,12 +82,71 @@ class ProcessingJob:
 
 
 class StateManager:
-    """状态管理器 - 线程安全"""
+    """状态管理器 - 线程安全，带异步通知"""
+
+    # 通知超时时间（毫秒），超过此时间的回调将被丢弃
+    CALLBACK_TIMEOUT_MS = 100
 
     def __init__(self):
         self._jobs: Dict[str, ProcessingJob] = {}
         self._lock = threading.RLock()
         self._callbacks: Dict[str, List[Callable]] = {}
+
+        # 异步通知队列
+        self._notify_queue: queue.Queue = queue.Queue()
+        self._notify_thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
+
+    def start(self):
+        """启动通知线程"""
+        if self._notify_thread is None or not self._notify_thread.is_alive():
+            self._notify_thread = threading.Thread(target=self._notify_loop, daemon=True)
+            self._notify_thread.start()
+
+    def stop(self):
+        """停止通知线程"""
+        self._stop_event.set()
+        if self._notify_thread:
+            self._notify_thread.join(timeout=1)
+
+    def _notify_loop(self):
+        """通知线程循环 - 异步处理回调避免阻塞"""
+        while not self._stop_event.is_set():
+            try:
+                event, args = self._notify_queue.get(timeout=0.1)
+                self._execute_callbacks(event, args)
+            except queue.Empty:
+                continue
+
+    def _execute_callbacks(self, event: str, args: tuple):
+        """执行回调，带超时控制"""
+        for callback in self._callbacks.get(event, []):
+            try:
+                # 使用线程执行回调，设置超时
+                result = [None]
+                def run_callback():
+                    try:
+                        callback(*args)
+                        result[0] = True
+                    except Exception as e:
+                        result[0] = e
+
+                cb_thread = threading.Thread(target=run_callback)
+                cb_thread.start()
+                cb_thread.join(timeout=self.CALLBACK_TIMEOUT_MS / 1000)
+
+                if cb_thread.is_alive():
+                    # 回调超时，记录警告
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        f"回调执行超时 ({self.CALLBACK_TIMEOUT_MS}ms): {event}"
+                    )
+                elif isinstance(result[0], Exception):
+                    raise result[0]
+
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"通知回调失败 ({event}): {e}")
 
     def create_job(self, video_path: Path) -> ProcessingJob:
         """创建新任务"""
@@ -162,17 +223,10 @@ class StateManager:
                     break
 
             if stage is None:
-                from semsub.core.pipeline import SubtitlePipeline
-                name_map = {
-                    "01_audio_extract": "音频提取",
-                    "02_vad_split": "VAD 分割",
-                    "03_asr_transcribe": "ASR 转录",
-                    "04_subtitle_optimize": "字幕优化",
-                    "05_llm_postprocess": "LLM 后处理",
-                }
+                from semsub.core.stages import STAGE_NAMES
                 stage = StageInfo(
                     stage_id=stage_id,
-                    name=name_map.get(stage_id, stage_id),
+                    name=STAGE_NAMES.get(stage_id, stage_id),
                     status="pending",
                 )
                 job.stages.append(stage)
@@ -244,27 +298,37 @@ class StateManager:
             ]
 
     def _notify(self, event: str, *args):
-        """通知订阅者"""
-        for callback in self._callbacks.get(event, []):
-            try:
-                callback(*args)
-            except Exception:
-                pass
+        """通知订阅者 - 异步方式"""
+        # 确保通知线程已启动
+        if self._notify_thread is None or not self._notify_thread.is_alive():
+            self.start()
+
+        # 将通知放入队列，异步处理
+        try:
+            self._notify_queue.put((event, args), timeout=0.1)
+        except queue.Full:
+            # 队列满时丢弃通知，记录警告
+            import logging
+            logging.getLogger(__name__).warning(f"通知队列已满，丢弃通知: {event}")
 
 
 # 全局状态管理器实例
 state_manager = StateManager()
+state_manager.start()  # 启动异步通知线程
 
 
 class ProgressReporter:
     """用于 Gradio 的进度报告器"""
 
-    STAGE_NAMES = {
-        "01_audio_extract": "音频提取",
-        "02_vad_split": "VAD 分割",
-        "03_asr_transcribe": "ASR 转录",
-        "04_subtitle_optimize": "字幕优化",
-        "05_llm_postprocess": "LLM 后处理",
+    # 从统一常量导入
+    from semsub.core.stages import STAGE_NAMES, STAGE_TO_ENUM_MAP
+
+    STAGE_MAP = {
+        "AUDIO_EXTRACT": "01_audio_extract",
+        "VAD_SPLIT": "02_vad_split",
+        "ASR_TRANSCRIBE": "03_asr_transcribe",
+        "SUBTITLE_OPTIMIZE": "04_subtitle_optimize",
+        "LLM_POSTPROCESS": "05_llm_postprocess",
     }
 
     def __init__(self, job_id: str):
@@ -291,7 +355,8 @@ class ProgressReporter:
             total = progress_or_stage.total
             message = progress_or_stage.message
             # 将 PipelineStage 转换为 stage_id
-            stage_id = str(stage).lower().replace('_', '')[:2]
+            stage_name = str(stage).split('.')[-1] if '.' in str(stage) else str(stage)
+            stage_id = self.STAGE_MAP.get(stage_name, str(stage).lower())
         else:
             # 旧方式：直接传入参数
             stage_id = progress_or_stage

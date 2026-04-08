@@ -104,15 +104,15 @@ class TestPageStructure:
 class TestHomePage:
     """首页功能测试"""
 
-    def test_file_upload_component(self, page: Page):
-        """测试文件上传组件"""
-        # 检查文件上传区域
-        upload_area = page.locator("text=上传视频文件").first
-        expect(upload_area).to_be_visible()
+    def test_file_path_input(self, page: Page):
+        """测试文件路径输入组件"""
+        # 检查文件路径输入区域
+        path_input = page.locator("text=视频文件路径").first
+        expect(path_input).to_be_visible()
 
-        # 检查文件输入框
-        file_input = page.locator('input[type="file"]').first
-        expect(file_input).to_be_attached()
+        # 检查文本输入框
+        text_input = page.locator('textarea[placeholder*="/path/to/movie.mp4"]').first
+        expect(text_input).to_be_visible()
 
     def test_preset_dropdown(self, page: Page):
         """测试预设选择下拉框"""
@@ -255,7 +255,7 @@ class TestWorkspacesPage:
     def test_refresh_button(self, page: Page):
         """测试刷新按钮"""
         self.navigate_to_workspaces(page)
-        refresh_btn = page.locator("text=刷新列表")
+        refresh_btn = page.locator('[role="tab"]:has-text("工作区")')
         expect(refresh_btn).to_be_visible()
 
 

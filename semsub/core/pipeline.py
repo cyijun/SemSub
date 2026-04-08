@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any
 
 from .config import PipelineConfig
 from .models import SubtitleLine
-from .progress import ProgressReporter, SilentProgressReporter
+from .progress import ProgressReporter, SilentProgressReporter, PipelineStage
 from .workspace import WorkspaceManager, Workspace, StageContext
 from .state_models import StageStatus, StageDependency, PipelineStatus, StageInfo
 from .stages import (
@@ -17,8 +17,19 @@ from .stages import (
     ASRTranscribeStage,
     SubtitleOptimizeStage,
     LLMPostprocessStage,
+    STAGE_ORDER,
+    STAGE_DEPENDENCIES,
+    STAGE_NAMES,
+    STAGE_TO_ENUM_MAP,
 )
 from .merger import save_subtitles
+from .resource_checker import ResourceChecker
+
+
+def _stage_id_to_enum(stage_id: str) -> PipelineStage:
+    """将阶段 ID 转换为 PipelineStage 枚举值"""
+    enum_name = STAGE_TO_ENUM_MAP.get(stage_id, "SUBTITLE_OPTIMIZE")
+    return getattr(PipelineStage, enum_name, PipelineStage.SUBTITLE_OPTIMIZE)
 
 
 class StageExecutor:
@@ -153,6 +164,10 @@ class StageExecutor:
             )
             raise
 
+        finally:
+            # 确保清理资源，防止 GPU 内存泄漏
+            self.stage_impl.cleanup()
+
     def _get_stage_params(self) -> Dict[str, Any]:
         """获取阶段的配置参数"""
         if self.stage_id == "01_audio_extract":
@@ -192,13 +207,7 @@ class StageExecutor:
 class SubtitlePipeline:
     """支持 Workspace 和分段执行的字幕生成管道"""
 
-    STAGE_ORDER = [
-        "01_audio_extract",
-        "02_vad_split",
-        "03_asr_transcribe",
-        "04_subtitle_optimize",
-        "05_llm_postprocess",
-    ]
+    STAGE_ORDER = STAGE_ORDER
 
     def __init__(
         self,
@@ -254,6 +263,13 @@ class SubtitlePipeline:
         else:
             output_path = Path(output_path)
 
+        # 资源预检查
+        reporter.on_log("检查系统资源...")
+        resource_check = ResourceChecker.preflight_check(video_path, output_path.parent)
+        if not resource_check.passed:
+            raise RuntimeError(f"资源检查失败: {resource_check.message}")
+        reporter.on_log(resource_check.message)
+
         # 获取工作区
         workspace = self._get_workspace(video_path)
 
@@ -280,11 +296,13 @@ class SubtitlePipeline:
         # 获取要执行的阶段列表
         stages_to_run = self.STAGE_ORDER[start_idx:stop_idx]
 
+        current_stage_id = None
         try:
             # 获取工作区锁
             with workspace.acquire_lock(timeout=5):
                 # 执行各阶段
                 for stage_id in stages_to_run:
+                    current_stage_id = stage_id
                     executor = StageExecutor(workspace, stage_id, self.config)
 
                     # 检查是否可以执行
@@ -308,8 +326,7 @@ class SubtitlePipeline:
                 return output_path
 
         except Exception as e:
-            from .progress import PipelineStage
-            reporter.on_error(PipelineStage.SUBTITLE_OPTIMIZE, e)
+            reporter.on_error(_stage_id_to_enum(current_stage_id), e)
             raise
 
     def run_stage(
@@ -357,7 +374,7 @@ class SubtitlePipeline:
         with workspace.acquire_lock(timeout=5):
             return executor.execute(reporter, resume=resume)
 
-    def get_status(self, video_path: Path) -> PipelineStatus:
+    def get_status(self, video_path: Path) -> Optional[PipelineStatus]:
         """获取管道状态"""
         video_path = Path(video_path)
         manager = WorkspaceManager(video_path, self.workspace_dir)
@@ -469,25 +486,11 @@ class SubtitlePipeline:
 
     def _get_stage_name(self, stage_id: str) -> str:
         """获取阶段名称"""
-        names = {
-            "01_audio_extract": "音频提取",
-            "02_vad_split": "VAD 分割",
-            "03_asr_transcribe": "ASR 转录",
-            "04_subtitle_optimize": "字幕优化",
-            "05_llm_postprocess": "LLM 后处理",
-        }
-        return names.get(stage_id, stage_id)
+        return STAGE_NAMES.get(stage_id, stage_id)
 
     def _get_stage_dependencies(self, stage_id: str) -> List[str]:
         """获取阶段依赖"""
-        deps = {
-            "01_audio_extract": [],
-            "02_vad_split": ["01_audio_extract"],
-            "03_asr_transcribe": ["02_vad_split"],
-            "04_subtitle_optimize": ["02_vad_split", "03_asr_transcribe"],
-            "05_llm_postprocess": ["04_subtitle_optimize"],
-        }
-        return deps.get(stage_id, [])
+        return STAGE_DEPENDENCIES.get(stage_id, [])
 
     def clean_workspace(self, video_path: Path, keep_output: bool = False):
         """清理工作区"""

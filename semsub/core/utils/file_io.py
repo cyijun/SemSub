@@ -5,10 +5,13 @@
 import json
 import hashlib
 import shutil
+import logging
 from pathlib import Path
 from typing import Any, Union, Optional
 import os
 import tempfile
+
+logger = logging.getLogger(__name__)
 
 
 class AtomicFileWriter:
@@ -128,8 +131,8 @@ def copy_with_hardlink(
             if not dst.exists():
                 os.link(src, dst)
                 return dst
-        except (OSError, FileExistsError):
-            pass
+        except (OSError, FileExistsError) as e:
+            logger.debug(f"硬链接失败，回退到复制: {src} -> {dst}: {e}")
 
     # 回退到复制
     shutil.copy2(src, dst)

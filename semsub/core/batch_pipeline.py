@@ -106,17 +106,25 @@ class BatchPipeline:
 
     def _create_video_reporter(self, batch_reporter: BatchReporter):
         """创建包装器捕获单个视频的进度并转发到批量报告器"""
+        from .progress import StageProgress
+
         class VideoReporterProxy(SilentProgressReporter):
-            def on_progress(self, stage, percent: float, message: str = ""):
+            def on_progress(self, progress: StageProgress):
                 # 更新当前视频状态
                 if batch_reporter.batch_info.current_video_status:
-                    batch_reporter.batch_info.current_video_status.progress_percent = percent
+                    batch_reporter.batch_info.current_video_status.progress_percent = progress.percent
                 batch_reporter._report()
 
-            def on_stage_complete(self, stage, success: bool):
-                pass
+            def on_stage_complete(self, stage, result=None):
+                # 更新当前阶段信息
+                if batch_reporter.batch_info.current_video_status:
+                    batch_reporter.batch_info.current_video_status.current_stage = str(stage)
+                batch_reporter._report()
 
-            def on_log(self, message: str):
-                pass
+            def on_log(self, message: str, level: str = "info"):
+                # 转发日志消息到批量报告器
+                if batch_reporter.batch_info.current_video_status:
+                    batch_reporter.batch_info.current_video_status.message = message
+                batch_reporter._report()
 
         return VideoReporterProxy()

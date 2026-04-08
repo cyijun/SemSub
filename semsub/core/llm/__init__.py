@@ -2,6 +2,7 @@
 
 from .base import LLMProvider, LLMConfig, LLMOutputMode, SubtitleBatch
 from .openai_compatible import OpenAICompatibleProvider
+from .processor import LLMSubtitleProcessor
 
 __all__ = [
     "LLMProvider",
@@ -9,4 +10,5 @@ __all__ = [
     "LLMOutputMode",
     "SubtitleBatch",
     "OpenAICompatibleProvider",
+    "LLMSubtitleProcessor",
 ]

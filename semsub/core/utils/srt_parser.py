@@ -2,8 +2,11 @@
 SRT 解析工具
 """
 
+import logging
 from typing import List
 from ..models import SubtitleLine
+
+logger = logging.getLogger(__name__)
 
 
 def parse_srt(content: str) -> List[SubtitleLine]:
@@ -32,11 +35,13 @@ def parse_srt(content: str) -> List[SubtitleLine]:
         try:
             index = int(lines_in_block[0].strip())
         except ValueError:
+            logger.warning(f"SRT 解析: 无效的序号行，跳过: {lines_in_block[0][:50]}")
             continue
 
         # 第二行是时间戳
         timestamp_line = lines_in_block[1].strip()
         if '-->' not in timestamp_line:
+            logger.warning(f"SRT 解析: 缺少时间戳分隔符，跳过: {timestamp_line[:50]}")
             continue
 
         # 解析时间戳
@@ -44,7 +49,8 @@ def parse_srt(content: str) -> List[SubtitleLine]:
             start_str, end_str = timestamp_line.split('-->')
             start = _parse_time(start_str.strip())
             end = _parse_time(end_str.strip())
-        except (ValueError, IndexError):
+        except (ValueError, IndexError) as e:
+            logger.warning(f"SRT 解析: 时间戳解析失败，跳过: {timestamp_line[:50]}: {e}")
             continue
 
         # 剩余行是文本
@@ -52,6 +58,7 @@ def parse_srt(content: str) -> List[SubtitleLine]:
         text = '\n'.join(text_lines).strip()
 
         if not text:
+            logger.warning(f"SRT 解析: 字幕 {index} 缺少文本内容，跳过")
             continue
 
         subtitle_line = SubtitleLine(

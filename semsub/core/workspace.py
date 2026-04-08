@@ -5,6 +5,7 @@
 
 import hashlib
 import json
+import logging
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,9 @@ from typing import Any, Dict, List, Optional, TypeVar, Union
 import fcntl
 import os
 import tempfile
+
+
+logger = logging.getLogger(__name__)
 
 from .state_models import (
     WorkspaceState,
@@ -67,27 +71,23 @@ class FileLock:
         self.fd = None
 
     def __enter__(self):
+        import time
+
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
         self.fd = open(self.lock_path, "w")
 
-        # 信号只能在主线程使用，检查当前线程
-        import threading
-        use_signal = self.timeout > 0 and threading.current_thread() is threading.main_thread()
-
-        if use_signal:
-            import signal
-
-            def timeout_handler(signum, frame):
-                raise TimeoutError(f"无法获取文件锁: {self.lock_path}")
-
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(int(self.timeout))
-
-        try:
+        if self.timeout > 0:
+            start = time.time()
+            while True:
+                try:
+                    fcntl.flock(self.fd.fileno(), fcntl.LOCK_NB | fcntl.LOCK_EX)
+                    break
+                except (IOError, OSError):
+                    if time.time() - start >= self.timeout:
+                        raise TimeoutError(f"无法获取文件锁: {self.lock_path}")
+                    time.sleep(0.1)
+        else:
             fcntl.flock(self.fd.fileno(), fcntl.LOCK_EX)
-        finally:
-            if use_signal:
-                signal.alarm(0)
 
         return self
 
@@ -304,30 +304,27 @@ class StageContext:
         self.state.checkpoint_data = {}
 
 
+from .stages.constants import STAGE_ORDER, STAGE_DEPENDENCIES, STAGE_NAMES
+
+
 class Workspace:
     """表示一个具体的工作区"""
 
-    STAGE_ORDER = [
-        "01_audio_extract",
-        "02_vad_split",
-        "03_asr_transcribe",
-        "04_subtitle_optimize",
-        "05_llm_postprocess",
-    ]
-
-    STAGE_DEPENDENCIES = {
-        "01_audio_extract": [],
-        "02_vad_split": ["01_audio_extract"],
-        "03_asr_transcribe": ["02_vad_split"],
-        "04_subtitle_optimize": ["02_vad_split", "03_asr_transcribe"],
-        "05_llm_postprocess": ["04_subtitle_optimize"],
-    }
+    STAGE_ORDER = STAGE_ORDER
+    STAGE_DEPENDENCIES = STAGE_DEPENDENCIES
+    STAGE_NAMES = STAGE_NAMES
 
     def __init__(self, workspace_dir: Path, state: WorkspaceState):
         self.workspace_dir = Path(workspace_dir)
         self.state = state
         self._stage_cache: Dict[str, StageContext] = {}
         self._lock: Optional[FileLock] = None
+
+        # 状态保存节流控制
+        self._last_save_time = 0.0
+        self._min_save_interval = 0.5  # 最少 500ms 间隔
+        self._last_progress_percent = 0.0
+        self._min_progress_delta = 5.0  # 进度变化至少 5% 才保存
 
     @property
     def video_path(self) -> Path:
@@ -345,11 +342,25 @@ class Workspace:
             self._lock.__exit__(None, None, None)
             self._lock = None
 
-    def save_state(self):
-        """保存状态到文件"""
+    def save_state(self, force: bool = False):
+        """保存状态到文件（支持节流）
+
+        Args:
+            force: 强制保存，忽略节流限制
+        """
+        import time
+
+        now = time.time()
+
+        if not force:
+            # 检查时间间隔
+            if now - self._last_save_time < self._min_save_interval:
+                return
+
         self.state.updated_at = datetime.now()
         state_path = self.workspace_dir / "state.json"
         safe_write_json(state_path, self.state.model_dump())
+        self._last_save_time = now
 
     def get_stage(self, stage_id: str) -> StageContext:
         """获取指定阶段的上下文"""
@@ -439,15 +450,24 @@ class Workspace:
         self.save_state()
 
     def update_stage_progress(self, stage_id: str, current: int, total: int, message: str = ""):
-        """更新阶段进度"""
+        """更新阶段进度（支持节流）"""
         stage = self.get_stage(stage_id)
+        percent = round(current / total * 100, 1) if total > 0 else 0.0
+
+        # 检查进度变化是否超过阈值
+        force_save = abs(percent - self._last_progress_percent) >= self._min_progress_delta
+
         stage.state.progress = StageProgressInfo(
             current=current,
             total=total,
             message=message,
-            percent=round(current / total * 100, 1) if total > 0 else 0.0,
+            percent=percent,
         )
-        self.save_state()
+
+        if force_save:
+            self._last_progress_percent = percent
+
+        self.save_state(force=force_save)
 
     def invalidate_downstream_stages(self, stage_id: str):
         """使下游阶段失效（当某个阶段重新执行时）"""
@@ -652,7 +672,7 @@ class WorkspaceManager:
                         "status": data.get("overall_status", "unknown"),
                         "updated_at": data.get("updated_at"),
                     })
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"跳过无效的工作区 {ws_dir}: {e}")
 
         return workspaces

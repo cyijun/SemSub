@@ -148,3 +148,7 @@ class SubtitleOptimizeStage(WorkspacePipelineStage):
             "original_text": line.original_text,
             "is_translated": line.is_translated
         }
+
+    def cleanup(self):
+        """清理资源（此阶段无需 GPU，空实现）"""
+        pass
