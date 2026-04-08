@@ -20,22 +20,31 @@ python test_new_arch.py
 python test_subtitle_merger.py
 ```
 
-**pytest (GUI tests require pytest-qt):**
+**pytest:**
 ```bash
-# Install pytest-qt first
-pip install pytest-qt
-
 # Run all tests
 pytest tests/ -v
 
 # Run specific test file
-pytest tests/test_gui.py -v
+pytest tests/test_gradio_gui.py -v
 
-# Run GUI tests (requires display)
-pytest tests/test_gui.py -v --qt-api pyqt6
+# Run end-to-end tests (requires GUI server running)
+pytest tests/test_gradio_e2e.py -v -s
 
 # Run with coverage
 pytest tests/ --cov=semsub --cov-report=term-missing
+```
+
+**Playwright Tests (Gradio GUI):**
+```bash
+# Install Playwright
+pip install playwright pytest-playwright
+
+# Run GUI tests
+pytest tests/test_gradio_gui.py -v
+
+# Run E2E tests with sample video
+pytest tests/test_gradio_e2e.py -v -s
 ```
 
 ### CLI - Generate Subtitles
@@ -92,7 +101,13 @@ python -m semsub gui --share
 python -m semsub.gradio_gui
 ```
 
-**PyQt6 GUI (旧版):**
+**GUI 特性：**
+- 文件路径输入（无需上传，支持大文件）
+- 5 个功能页面：快速开始、批量处理、SRT处理、工作区、设置
+- 实时进度显示和日志输出
+- 完整的 ASR/VAD/字幕/LLM 配置界面
+
+**PyQt6 GUI (旧版，不再维护):**
 ```bash
 python -m semsub.gui.app
 ```
@@ -143,24 +158,19 @@ semsub/
 ├── cli/                     # Command-line interface
 │   ├── main.py              # CLI entry point
 │   └── commands/            # Subcommands (generate, status, run_stage, gui, etc.)
-├── gui/                     # PyQt6 graphical interface (legacy)
+├── gui/                     # PyQt6 graphical interface (legacy, unmaintained)
 │   ├── app.py               # GUI entry point
-│   ├── main_window.py       # Main window with batch processing
 │   ├── workers/             # QThread workers
-│   │   ├── pipeline_worker.py
-│   │   └── batch_worker.py
 │   └── widgets/             # Custom widgets
-│       ├── stage_flow_widget.py
-│       └── workspace_panel.py
 └── gradio_gui/              # Gradio Web GUI (recommended)
     ├── app.py               # Gradio app entry
     ├── pages/               # Page modules
-    │   ├── home.py          # Quick start page
+    │   ├── home.py          # Quick start page (file path input)
     │   ├── batch.py         # Batch processing page
     │   ├── srt_process.py   # SRT processing page
     │   ├── workspaces.py    # Workspace management page
-    │   └── settings.py      # Settings page
-    ├── state.py             # Global state management
+    │   └── settings.py      # Settings page (ASR/VAD/Subtitle/LLM tabs)
+    ├── state.py             # Global state management with ProcessingJob
     └── utils.py             # Utility functions
 ```
 
@@ -336,12 +346,28 @@ When directory input is provided:
 - Atomic file writes via temp file + rename pattern
 - Video file hash computed from first 1MB + size + mtime for change detection
 
-### GUI Development Critical Notes
+### GUI Development
 
-**1. Signal module limitation**
-`signal.signal()` only works in the main thread. When using file locking in worker threads (QThread), the code checks `threading.current_thread() is threading.main_thread()` before using signals.
+**Gradio GUI Architecture:**
+- Uses Gradio 6.x with Blocks API
+- Pages are defined in `semsub/gradio_gui/pages/`
+- State management in `semsub/gradio_gui/state.py` with `StateManager` and `ProcessingJob`
+- File path input instead of file upload (supports large files without browser upload)
 
-**2. WorkspaceManager API (Common bug source)**
+**Gradio File Path Input Pattern:**
+```python
+# Gradio GUI uses file path input (not upload) for large files
+file_path_input = gr.Textbox(
+    label="视频文件路径（每行一个）",
+    placeholder="/path/to/movie.mp4\n/path/to/another.mkv",
+    lines=3,
+)
+
+# Parse paths on the server side
+paths = parse_video_paths(path_text)  # Returns List[Path]
+```
+
+**WorkspaceManager API (Common bug source)**
 Correct usage in GUI workers:
 ```python
 # Correct
@@ -357,11 +383,15 @@ workspace = manager.get_workspace(video_path)  # Method doesn't exist
 stage_context = workspace.get_stage_context(stage_id)  # Method doesn't exist
 ```
 
-**3. Qt imports in GUI modules**
-Always check for missing imports when adding new Qt classes:
+### Progress Reporter Compatibility
+
+The `ProgressReporter` interface supports both old and new calling conventions:
 ```python
-# Common missing imports that cause NameError at runtime
-from PyQt6.QtWidgets import QFileDialog, QMessageBox  # Often forgotten
+# Old way (stage_id as string)
+reporter.on_progress("03_asr_transcribe", current=10, total=100, message="Processing...")
+
+# New way (StageProgress object from core)
+reporter.on_progress(StageProgress(stage=stage, current=10, total=100, message="..."))
 ```
 
 ## Dependencies
@@ -371,7 +401,13 @@ from PyQt6.QtWidgets import QFileDialog, QMessageBox  # Often forgotten
 pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
 
 # Core dependencies
-pip install qwen-asr silero-vad torchcodec PyQt6 openai click rich pyyaml pydantic
+pip install qwen-asr silero-vad torchcodec openai click rich pyyaml pydantic
+
+# Gradio GUI
+pip install gradio
+
+# Testing
+pip install pytest playwright pytest-playwright
 
 # System requirement: FFmpeg in PATH
 ```
