@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}工作区{% endblock %}
+{% block page_title %}工作区管理{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="toolbar">
+        <button type="button" class="btn btn-primary" onclick="refreshWorkspaces()">
+            <span class="icon">&#8635;</span> 刷新
+        </button>
+    </div>
+    <div id="workspaces-list">
+        <p class="text-muted">加载中...</p>
+    </div>
+</div>
+
+<div id="ws-detail-modal" class="modal hidden">
+    <div class="modal-content modal-lg">
+        <div class="modal-header">
+            <h3>工作区详情</h3>
+            <button type="button" class="btn-close" onclick="closeWSDetail()">&times;</button>
+        </div>
+        <div class="modal-body" id="ws-detail-body">
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeWSDetail()">关闭</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function refreshWorkspaces() {
+    const container = document.getElementById('workspaces-list');
+    container.innerHTML = '<p class="text-muted">加载中...</p>';
+    try {
+        const workspaces = await apiGet('/workspaces');
+        if (workspaces.length === 0) {
+            container.innerHTML = '<p class="text-muted">未发现工作区</p>';
+            return;
+        }
+        container.innerHTML = `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>视频文件</th>
+                        <th>状态</th>
+                        <th>当前阶段</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${workspaces.map(ws => `
+                        <tr>
+                            <td>${ws.video_path || '未知'}</td>
+                            <td><span class="badge badge-${ws.status}">${ws.status}</span></td>
+                            <td>${ws.current_stage || '-'}</td>
+                            <td>
+                                <button class="btn btn-sm" onclick="showWSDetail('${encodeURIComponent(ws.video_path || '')}')">详情</button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    } catch (e) {
+        container.innerHTML = `<p class="text-muted">加载失败: ${e.message}</p>`;
+    }
+}
+
+async function showWSDetail(videoPath) {
+    try {
+        const data = await apiGet(`/workspace/status?video_path=${videoPath}`);
+        const body = document.getElementById('ws-detail-body');
+        const stages = Object.entries(data.stage_summary || {}).map(([id, info]) => `
+            <tr>
+                <td>${id}</td>
+                <td><span class="badge badge-${info.status}">${info.status}</span></td>
+                <td>${info.duration_sec ? info.duration_sec.toFixed(1) + 's' : '-'}</td>
+            </tr>
+        `).join('');
+        body.innerHTML = `
+            <div class="form-group">
+                <label>视频路径</label>
+                <p>${data.video_path}</p>
+            </div>
+            <div class="form-group">
+                <label>总体状态</label>
+                <p><span class="badge badge-${data.overall_status}">${data.overall_status}</span></p>
+            </div>
+            <div class="form-group">
+                <label>当前阶段</label>
+                <p>${data.current_stage || '-'}</p>
+            </div>
+            <div class="form-group">
+                <label>阶段详情</label>
+                <table class="data-table">
+                    <thead><tr><th>阶段</th><th>状态</th><th>耗时</th></tr></thead>
+                    <tbody>${stages}</tbody>
+                </table>
+            </div>
+        `;
+        document.getElementById('ws-detail-modal').classList.remove('hidden');
+    } catch (e) {
+        showToast('加载详情失败', 'error');
+    }
+}
+
+function closeWSDetail() {
+    document.getElementById('ws-detail-modal').classList.add('hidden');
+}
+
+document.addEventListener('DOMContentLoaded', refreshWorkspaces);
+</script>
+{% endblock %}

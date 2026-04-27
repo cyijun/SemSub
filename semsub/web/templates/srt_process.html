@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+
+{% block title %}SRT处理{% endblock %}
+{% block page_title %}SRT 处理{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="form-group">
+        <label>输入 SRT 文件</label>
+        <div class="file-picker">
+            <input type="text" id="srt-input" class="form-control" placeholder="/path/to/input.srt" readonly>
+            <button type="button" class="btn btn-secondary" onclick="openFileBrowser('srt-input', false)">浏览...</button>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>输出 SRT 文件 (可选)</label>
+        <div class="file-picker">
+            <input type="text" id="srt-output" class="form-control" placeholder="默认: 同目录 .processed.srt" readonly>
+            <button type="button" class="btn btn-secondary" onclick="openFileBrowser('srt-output', false)">浏览...</button>
+        </div>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label>处理模式</label>
+            <select id="srt-mode" class="form-control">
+                <option value="correct">校正 (correct)</option>
+                <option value="translate">翻译 (translate)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>提供商</label>
+            <select id="srt-provider" class="form-control">
+                <option value="">默认</option>
+                <option value="openai_compatible">OpenAI Compatible</option>
+                <option value="ollama">Ollama</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>目标语言 (翻译时必填)</label>
+        <input type="text" id="srt-target-lang" class="form-control" placeholder="zh-CN, en, ja...">
+    </div>
+
+    <div class="form-actions">
+        <button type="button" class="btn btn-primary btn-lg" onclick="startSRTProcess()" id="btn-srt">开始处理</button>
+    </div>
+</div>
+
+<div id="srt-progress-card" class="card hidden">
+    <h3>处理进度</h3>
+    <div class="progress-bar-container">
+        <div id="srt-progress-bar" class="progress-bar" style="width: 0%"></div>
+    </div>
+    <div class="progress-info">
+        <span id="srt-progress-percent">0%</span>
+        <span id="srt-progress-stage" class="text-muted">等待中...</span>
+    </div>
+    <div class="log-panel">
+        <pre id="srt-log-output"></pre>
+    </div>
+    <div class="form-actions">
+        <button type="button" class="btn btn-danger" onclick="cancelSRTJob()" id="btn-srt-cancel">取消</button>
+        <a id="srt-download-link" class="btn btn-success hidden" download>下载结果</a>
+    </div>
+</div>
+
+<div id="file-browser-modal" class="modal hidden">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>选择文件</h3>
+            <button type="button" class="btn-close" onclick="closeFileBrowser()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="breadcrumb" id="fb-breadcrumb"></div>
+            <div class="file-list" id="fb-list"></div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-primary" onclick="confirmFileBrowser()">确定</button>
+            <button type="button" class="btn btn-secondary" onclick="closeFileBrowser()">取消</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let srtJobId = null;
+let srtSSE = null;
+let fbTargetId = null;
+let fbCurrentPath = '';
+
+async function startSRTProcess() {
+    const srtPath = document.getElementById('srt-input').value;
+    if (!srtPath) {
+        showToast('请选择 SRT 文件', 'error');
+        return;
+    }
+
+    const params = new URLSearchParams();
+    params.append('srt_path', srtPath);
+    params.append('mode', document.getElementById('srt-mode').value);
+    const provider = document.getElementById('srt-provider').value;
+    if (provider) params.append('provider', provider);
+    const targetLang = document.getElementById('srt-target-lang').value;
+    if (targetLang) params.append('target_language', targetLang);
+    const outputPath = document.getElementById('srt-output').value;
+    if (outputPath) params.append('output_path', outputPath);
+
+    try {
+        const result = await apiPost('/job/srt-process', params);
+        srtJobId = result.job_id;
+        showToast('SRT 处理任务已创建', 'success');
+        document.getElementById('srt-progress-card').classList.remove('hidden');
+        document.getElementById('btn-srt').disabled = true;
+        connectSRTSSE(srtJobId);
+    } catch (e) {
+        showToast(e.message || '创建任务失败', 'error');
+    }
+}
+
+function connectSRTSSE(jobId) {
+    if (srtSSE) srtSSE.close();
+    const evtSource = new EventSource(`/api/sse/job/${jobId}`);
+    srtSSE = evtSource;
+
+    evtSource.addEventListener('update', (e) => {
+        const data = JSON.parse(e.data);
+        document.getElementById('srt-progress-bar').style.width = data.progress_percent + '%';
+        document.getElementById('srt-progress-percent').textContent = Math.round(data.progress_percent) + '%';
+        if (data.current_stage) {
+            document.getElementById('srt-progress-stage').textContent = data.current_stage;
+        }
+        if (data.logs && data.logs.length > 0) {
+            document.getElementById('srt-log-output').textContent = data.logs.join('\n');
+        }
+    });
+
+    evtSource.addEventListener('done', (e) => {
+        const data = JSON.parse(e.data);
+        evtSource.close();
+        document.getElementById('btn-srt-cancel').classList.add('hidden');
+        document.getElementById('btn-srt').disabled = false;
+        if (data.status === 'completed') {
+            showToast('SRT 处理完成', 'success');
+            document.getElementById('srt-download-link').classList.remove('hidden');
+        } else {
+            showToast('SRT 处理失败', 'error');
+        }
+    });
+}
+
+async function cancelSRTJob() {
+    if (!srtJobId) return;
+    try {
+        await apiPost(`/job/${srtJobId}/cancel`);
+        showToast('任务已取消', 'info');
+    } catch (e) {
+        showToast('取消失败', 'error');
+    }
+}
+
+// File browser
+async function openFileBrowser(targetId) {
+    fbTargetId = targetId;
+    document.getElementById('file-browser-modal').classList.remove('hidden');
+    if (!fbCurrentPath) {
+        const home = await apiGet('/fs/home');
+        fbCurrentPath = home.path;
+    }
+    await renderFileBrowser(fbCurrentPath);
+}
+
+function closeFileBrowser() {
+    document.getElementById('file-browser-modal').classList.add('hidden');
+}
+
+function confirmFileBrowser() {
+    if (fbTargetId) {
+        document.getElementById(fbTargetId).value = fbCurrentPath;
+    }
+    closeFileBrowser();
+}
+
+function selectFile(path) {
+    fbCurrentPath = path;
+    confirmFileBrowser();
+}
+
+async function renderFileBrowser(path) {
+    fbCurrentPath = path;
+    document.getElementById('fb-breadcrumb').textContent = path;
+    const list = document.getElementById('fb-list');
+    list.innerHTML = '<div class="fb-loading">加载中...</div>';
+
+    try {
+        const data = await apiGet(`/fs/browse?path=${encodeURIComponent(path)}`);
+        let html = '';
+        if (data.parent) {
+            html += `<div class="fb-item fb-dir" onclick="renderFileBrowser('${data.parent}')">
+                <span class="fb-icon">&#8593;</span> ..
+            </div>`;
+        }
+        for (const item of data.items) {
+            if (item.type === 'dir') {
+                html += `<div class="fb-item fb-dir" onclick="renderFileBrowser('${data.current}/${item.name}')">
+                    <span class="fb-icon">&#128193;</span> ${item.name}
+                </div>`;
+            } else {
+                const ext = item.ext || '';
+                html += `<div class="fb-item fb-file${ext === '.srt' ? ' fb-highlight' : ''}"
+                    onclick="selectFile('${data.current}/${item.name}')">
+                    <span class="fb-icon">&#128196;</span> ${item.name}
+                    <span class="fb-size">${formatBytes(item.size)}</span>
+                </div>`;
+            }
+        }
+        list.innerHTML = html;
+    } catch (e) {
+        list.innerHTML = `<div class="fb-error">加载失败: ${e.message}</div>`;
+    }
+}
+</script>
+{% endblock %}

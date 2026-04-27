@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+
+{% block title %}设置{% endblock %}
+{% block page_title %}系统设置{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="toolbar">
+        <button type="button" class="btn btn-primary" onclick="loadConfig()">刷新</button>
+        <button type="button" class="btn btn-success" onclick="saveConfig()">保存</button>
+        <button type="button" class="btn btn-secondary" onclick="resetConfig()">重置</button>
+    </div>
+
+    <div class="config-tabs">
+        <button type="button" class="tab-btn active" data-tab="asr" onclick="switchTab('asr')">ASR</button>
+        <button type="button" class="tab-btn" data-tab="vad" onclick="switchTab('vad')">VAD</button>
+        <button type="button" class="tab-btn" data-tab="subtitle" onclick="switchTab('subtitle')">字幕</button>
+        <button type="button" class="tab-btn" data-tab="llm" onclick="switchTab('llm')">LLM</button>
+    </div>
+
+    <div id="config-form">
+        <div class="tab-panel active" id="tab-asr">
+            <div class="form-group">
+                <label>模型路径</label>
+                <input type="text" id="cfg-asr-model" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>对齐器路径</label>
+                <input type="text" id="cfg-asr-aligner" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>批次大小</label>
+                <input type="number" id="cfg-asr-batch" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>语言 (空=自动检测)</label>
+                <input type="text" id="cfg-asr-lang" class="form-control">
+            </div>
+        </div>
+
+        <div class="tab-panel" id="tab-vad">
+            <div class="form-group">
+                <label>阈值</label>
+                <input type="number" step="0.1" id="cfg-vad-threshold" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>最短语音时长 (ms)</label>
+                <input type="number" id="cfg-vad-min-speech" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>最短静音时长 (ms)</label>
+                <input type="number" id="cfg-vad-min-silence" class="form-control">
+            </div>
+        </div>
+
+        <div class="tab-panel" id="tab-subtitle">
+            <div class="form-group">
+                <label>每行最大中文字符</label>
+                <input type="number" id="cfg-sub-max-chars" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>每行最大英文字符</label>
+                <input type="number" id="cfg-sub-max-chars-en" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>最大时长 (秒)</label>
+                <input type="number" step="0.1" id="cfg-sub-max-dur" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>最小时长 (秒)</label>
+                <input type="number" step="0.1" id="cfg-sub-min-dur" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>合并阈值 (秒)</label>
+                <input type="number" step="0.1" id="cfg-sub-gap" class="form-control">
+            </div>
+        </div>
+
+        <div class="tab-panel" id="tab-llm">
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="cfg-llm-enabled">
+                    启用 LLM 后处理
+                </label>
+            </div>
+            <div class="form-group">
+                <label>提供商</label>
+                <select id="cfg-llm-provider" class="form-control">
+                    <option value="openai_compatible">OpenAI Compatible</option>
+                    <option value="ollama">Ollama</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>API Key</label>
+                <input type="password" id="cfg-llm-key" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>Base URL</label>
+                <input type="text" id="cfg-llm-url" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>模型</label>
+                <input type="text" id="cfg-llm-model" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>响应格式</label>
+                <select id="cfg-llm-format" class="form-control">
+                    <option value="auto">auto</option>
+                    <option value="prompt">prompt</option>
+                    <option value="tool_calling">tool_calling</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentConfig = null;
+
+async function loadConfig() {
+    try {
+        const config = await apiGet('/config');
+        currentConfig = config;
+        // ASR
+        document.getElementById('cfg-asr-model').value = config.asr?.model_path || '';
+        document.getElementById('cfg-asr-aligner').value = config.asr?.aligner_path || '';
+        document.getElementById('cfg-asr-batch').value = config.asr?.batch_size || '';
+        document.getElementById('cfg-asr-lang').value = config.asr?.language || '';
+        // VAD
+        document.getElementById('cfg-vad-threshold').value = config.vad?.threshold || '';
+        document.getElementById('cfg-vad-min-speech').value = config.vad?.min_speech_duration_ms || '';
+        document.getElementById('cfg-vad-min-silence').value = config.vad?.min_silence_duration_ms || '';
+        // Subtitle
+        document.getElementById('cfg-sub-max-chars').value = config.subtitle?.max_chars || '';
+        document.getElementById('cfg-sub-max-chars-en').value = config.subtitle?.max_chars_en || '';
+        document.getElementById('cfg-sub-max-dur').value = config.subtitle?.max_duration || '';
+        document.getElementById('cfg-sub-min-dur').value = config.subtitle?.min_duration || '';
+        document.getElementById('cfg-sub-gap').value = config.subtitle?.gap_threshold || '';
+        // LLM
+        document.getElementById('cfg-llm-enabled').checked = config.llm?.enabled || false;
+        document.getElementById('cfg-llm-provider').value = config.llm?.provider || 'openai_compatible';
+        document.getElementById('cfg-llm-key').value = config.llm?.api_key || '';
+        document.getElementById('cfg-llm-url').value = config.llm?.base_url || '';
+        document.getElementById('cfg-llm-model').value = config.llm?.model || '';
+        document.getElementById('cfg-llm-format').value = config.llm?.response_format || 'auto';
+    } catch (e) {
+        showToast('加载配置失败', 'error');
+    }
+}
+
+async function saveConfig() {
+    const config = {
+        asr: {
+            model_path: document.getElementById('cfg-asr-model').value,
+            aligner_path: document.getElementById('cfg-asr-aligner').value,
+            batch_size: parseInt(document.getElementById('cfg-asr-batch').value) || 8,
+            language: document.getElementById('cfg-asr-lang').value || null,
+        },
+        vad: {
+            threshold: parseFloat(document.getElementById('cfg-vad-threshold').value) || 0.5,
+            min_speech_duration_ms: parseInt(document.getElementById('cfg-vad-min-speech').value) || 250,
+            min_silence_duration_ms: parseInt(document.getElementById('cfg-vad-min-silence').value) || 500,
+        },
+        subtitle: {
+            max_chars: parseInt(document.getElementById('cfg-sub-max-chars').value) || 40,
+            max_chars_en: parseInt(document.getElementById('cfg-sub-max-chars-en').value) || 80,
+            max_duration: parseFloat(document.getElementById('cfg-sub-max-dur').value) || 6.0,
+            min_duration: parseFloat(document.getElementById('cfg-sub-min-dur').value) || 1.0,
+            gap_threshold: parseFloat(document.getElementById('cfg-sub-gap').value) || 0.3,
+        },
+        llm: {
+            enabled: document.getElementById('cfg-llm-enabled').checked,
+            provider: document.getElementById('cfg-llm-provider').value,
+            api_key: document.getElementById('cfg-llm-key').value,
+            base_url: document.getElementById('cfg-llm-url').value,
+            model: document.getElementById('cfg-llm-model').value,
+            response_format: document.getElementById('cfg-llm-format').value,
+        },
+    };
+    try {
+        await apiPostJson('/config', config);
+        showToast('配置已保存', 'success');
+        loadConfig();
+    } catch (e) {
+        showToast('保存失败: ' + (e.message || ''), 'error');
+    }
+}
+
+async function resetConfig() {
+    if (!confirm('确定要重置为默认配置吗？')) return;
+    try {
+        await apiPost('/config/reset');
+        showToast('配置已重置', 'success');
+        loadConfig();
+    } catch (e) {
+        showToast('重置失败', 'error');
+    }
+}
+
+function switchTab(tabId) {
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+    document.querySelector(`[data-tab="${tabId}"]`).classList.add('active');
+    document.getElementById('tab-' + tabId).classList.add('active');
+}
+
+document.addEventListener('DOMContentLoaded', loadConfig);
+</script>
+{% endblock %}

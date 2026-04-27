@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}首页{% endblock %}
+{% block page_title %}欢迎使用 SemSub{% endblock %}
+
+{% block content %}
+<div class="home-grid">
+    <div class="card feature-card" onclick="location.href='/generate'">
+        <div class="card-icon">&#9654;</div>
+        <h3>生成字幕</h3>
+        <p>为单个视频文件生成优化字幕，支持 ASR 转录和 LLM 后处理。</p>
+    </div>
+    <div class="card feature-card" onclick="location.href='/batch'">
+        <div class="card-icon">&#9638;</div>
+        <h3>批量处理</h3>
+        <p>一次性处理整个目录的视频文件，自动跳过已完成的文件。</p>
+    </div>
+    <div class="card feature-card" onclick="location.href='/srt-process'">
+        <div class="card-icon">&#9998;</div>
+        <h3>SRT 处理</h3>
+        <p>使用 LLM 对现有 SRT 字幕进行校正或翻译。</p>
+    </div>
+    <div class="card feature-card" onclick="location.href='/workspaces'">
+        <div class="card-icon">&#128193;</div>
+        <h3>工作区管理</h3>
+        <p>查看和管理所有视频的工作区状态，恢复中断的任务。</p>
+    </div>
+</div>
+
+<div class="card" style="margin-top: 2rem;">
+    <h3>最近任务</h3>
+    <div id="recent-jobs">
+        <p class="text-muted">加载中...</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+    const container = document.getElementById('recent-jobs');
+    try {
+        const jobs = await apiGet('/job/list');
+        const recent = jobs.slice(-5).reverse();
+        if (recent.length === 0) {
+            container.innerHTML = '<p class="text-muted">暂无任务</p>';
+            return;
+        }
+        container.innerHTML = recent.map(j => `
+            <div class="job-row">
+                <span class="badge badge-${j.status}">${j.status}</span>
+                <span class="job-type">${j.type}</span>
+                <span class="job-time">${new Date(j.created_at).toLocaleString()}</span>
+                <a href="/generate?job=${j.id}" class="btn btn-sm">查看</a>
+            </div>
+        `).join('');
+    } catch (e) {
+        container.innerHTML = '<p class="text-muted">无法加载任务列表</p>';
+    }
+});
+</script>
+{% endblock %}

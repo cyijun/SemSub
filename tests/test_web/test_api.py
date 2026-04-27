@@ -141,3 +141,24 @@ class TestConfigAPI:
         response = client.get("/api/config")
         data = response.json()
         assert "llm" in data
+
+
+class TestSSEAPI:
+    def test_sse_job_not_found(self, client):
+        response = client.get("/api/sse/job/job-00000000")
+        assert response.status_code == 404
+
+    def test_sse_job_stream(self, client):
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            f.write(b"fake video")
+            path = f.name
+        try:
+            create_resp = client.post("/api/job/generate", params={"video_path": path})
+            job_id = create_resp.json()["job_id"]
+            response = client.get(f"/api/sse/job/{job_id}")
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+        finally:
+            import os
+            os.unlink(path)
