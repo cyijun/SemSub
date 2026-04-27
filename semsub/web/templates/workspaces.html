@@ -38,7 +38,13 @@ async function refreshWorkspaces() {
     try {
         const workspaces = await apiGet('/workspaces');
         if (workspaces.length === 0) {
-            container.innerHTML = '<p class="text-muted">未发现工作区</p>';
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">&#128193;</div>
+                    <h4>未发现工作区</h4>
+                    <p>处理视频后将自动创建工作区</p>
+                </div>
+            `;
             return;
         }
         container.innerHTML = `

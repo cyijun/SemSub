@@ -43,7 +43,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         const jobs = await apiGet('/job/list');
         const recent = jobs.slice(-5).reverse();
         if (recent.length === 0) {
-            container.innerHTML = '<p class="text-muted">暂无任务</p>';
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">&#128196;</div>
+                    <h4>暂无任务</h4>
+                    <p>点击上方功能卡片开始你的第一个字幕生成任务</p>
+                </div>
+            `;
             return;
         }
         container.innerHTML = recent.map(j => `
@@ -55,7 +61,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
         `).join('');
     } catch (e) {
-        container.innerHTML = '<p class="text-muted">无法加载任务列表</p>';
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">&#9888;</div>
+                <h4>无法加载</h4>
+                <p>任务列表加载失败，请稍后重试</p>
+            </div>
+        `;
     }
 });
 </script>

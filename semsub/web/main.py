@@ -36,10 +36,6 @@ def create_app() -> FastAPI:
     app.include_router(sse.router, prefix="/api")
     app.include_router(pages.router)
 
-    @app.get("/")
-    async def root():
-        return {"message": "SemSub Web GUI", "docs": "/docs"}
-
     return app
 
 
