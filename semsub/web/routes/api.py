@@ -6,10 +6,14 @@ Includes:
 - Job management endpoints (create, status, list, cancel)
 """
 
+import shutil
+import tempfile
+import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request, BackgroundTasks
+from fastapi import APIRouter, File, HTTPException, Query, Request, BackgroundTasks, UploadFile
+from starlette.responses import FileResponse
 
 from semsub.core.pipeline import SubtitlePipeline
 from semsub.core.config_manager import get_config_manager
@@ -257,6 +261,62 @@ async def create_srt_process_job(
     )
     background_tasks.add_task(_run_srt_process, job_id, job_manager, srt_path, mode, provider, response_format, target_language, output_path)
     return {"job_id": job_id, "status": "pending"}
+
+
+# ---------------------------------------------------------------------------
+# File Upload / Download API
+# ---------------------------------------------------------------------------
+
+# Upload directory for browser-uploaded files
+UPLOAD_DIR = Path(tempfile.gettempdir()) / "semsub_uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+
+@router.post("/upload")
+async def upload_file(file: UploadFile = File(...)):
+    """Upload a file to server temporary directory."""
+    suffix = Path(file.filename or "upload").suffix
+    temp_path = UPLOAD_DIR / f"{uuid.uuid4().hex}{suffix}"
+
+    with open(temp_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    return {
+        "path": str(temp_path),
+        "filename": file.filename,
+    }
+
+
+@router.get("/download")
+async def download_file(path: str = Query(...)):
+    """Safely download a file from allowed directories."""
+    file_path = Path(path).resolve()
+
+    # Security: only allow downloads from temp directories or upload dir
+    allowed_parents = [
+        UPLOAD_DIR.resolve(),
+        Path(tempfile.gettempdir()).resolve(),
+    ]
+
+    # Also allow workspace output directories (for pipeline outputs)
+    workspace_dirs = [p.resolve() for p in Path(".").rglob(".semsub") if p.is_dir()]
+    for ws_dir in workspace_dirs:
+        allowed_parents.append(ws_dir.resolve())
+
+    if not any(
+        str(file_path).startswith(str(p))
+        for p in allowed_parents
+    ):
+        raise HTTPException(status_code=403, detail="访问被拒绝")
+
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    return FileResponse(
+        str(file_path),
+        filename=file_path.name,
+        media_type="text/plain",
+    )
 
 
 # ---------------------------------------------------------------------------

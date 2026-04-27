@@ -14,6 +14,16 @@
     </div>
 
     <div class="form-group">
+        <label>或上传 SRT 文件</label>
+        <div class="upload-zone" id="upload-zone" onclick="document.getElementById('srt-file-input').click()">
+            <div class="upload-zone-icon">&#128206;</div>
+            <p>点击选择或拖拽 SRT 文件到此处</p>
+            <input type="file" id="srt-file-input" accept=".srt" style="display:none" onchange="handleSRTUpload(this)">
+        </div>
+        <p id="upload-filename" class="text-muted" style="margin-top:0.5rem;"></p>
+    </div>
+
+    <div class="form-group">
         <label>输出 SRT 文件 (可选)</label>
         <div class="file-picker">
             <input type="text" id="srt-output" class="form-control" placeholder="默认: 同目录 .processed.srt" readonly>
@@ -153,16 +163,25 @@ function connectSRTSSE(jobId) {
         }
     });
 
-    evtSource.addEventListener('done', (e) => {
+    evtSource.addEventListener('done', async (e) => {
         const data = JSON.parse(e.data);
         evtSource.close();
         document.getElementById('btn-srt-cancel').classList.add('hidden');
         document.getElementById('btn-srt').disabled = false;
         if (data.status === 'completed') {
             showToast('SRT 处理完成', 'success');
-            document.getElementById('srt-download-link').classList.remove('hidden');
+            try {
+                const jobDetail = await apiGet(`/job/${srtJobId}/status`);
+                if (jobDetail.result?.output_path) {
+                    const downloadLink = document.getElementById('srt-download-link');
+                    downloadLink.href = `/api/download?path=${encodeURIComponent(jobDetail.result.output_path)}`;
+                    downloadLink.classList.remove('hidden');
+                }
+            } catch (err) {
+                showToast('无法获取下载链接', 'warning');
+            }
         } else {
-            showToast('SRT 处理失败', 'error');
+            showToast('SRT 处理失败: ' + (data.error || ''), 'error');
         }
     });
 }
@@ -237,5 +256,68 @@ async function renderFileBrowser(path) {
         list.innerHTML = `<div class="fb-error">加载失败: ${e.message}</div>`;
     }
 }
+
+// SRT file upload
+async function handleSRTUpload(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    document.getElementById('upload-filename').textContent = `已选择: ${file.name}`;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const response = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData,
+        });
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.detail || '上传失败');
+        }
+        const data = await response.json();
+        document.getElementById('srt-input').value = data.path;
+        showToast('文件上传成功', 'success');
+    } catch (e) {
+        showToast(e.message || '上传失败', 'error');
+    }
+}
+
+// Drag and drop support
+document.addEventListener('DOMContentLoaded', () => {
+    const uploadZone = document.getElementById('upload-zone');
+    if (!uploadZone) return;
+
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        uploadZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        }, false);
+    });
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+        uploadZone.addEventListener(eventName, () => {
+            uploadZone.classList.add('drag-over');
+        }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        uploadZone.addEventListener(eventName, () => {
+            uploadZone.classList.remove('drag-over');
+        }, false);
+    });
+
+    uploadZone.addEventListener('drop', (e) => {
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            const input = document.getElementById('srt-file-input');
+            const dt = new DataTransfer();
+            dt.items.add(files[0]);
+            input.files = dt.files;
+            handleSRTUpload(input);
+        }
+    }, false);
+});
 </script>
 {% endblock %}
