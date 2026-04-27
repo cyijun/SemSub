@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block title %}批量处理{% endblock %}
+{% block page_title %}批量处理{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="form-group">
+        <label>视频目录</label>
+        <div class="file-picker">
+            <input type="text" id="batch-dir" class="form-control" placeholder="/path/to/videos" readonly>
+            <button type="button" class="btn btn-secondary" onclick="openFileBrowser('batch-dir', true)">浏览...</button>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>输出目录 (可选)</label>
+        <div class="file-picker">
+            <input type="text" id="batch-output-dir" class="form-control" placeholder="默认: 视频同目录" readonly>
+            <button type="button" class="btn btn-secondary" onclick="openFileBrowser('batch-output-dir', true)">浏览...</button>
+        </div>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label>预设</label>
+            <select id="batch-preset" class="form-control">
+                <option value="">默认</option>
+                <option value="movie">电影 (movie)</option>
+                <option value="documentary">纪录片 (documentary)</option>
+                <option value="animation">动画 (animation)</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label class="checkbox-label">
+            <input type="checkbox" id="batch-continue">
+            出错时继续处理其他文件
+        </label>
+    </div>
+
+    <div class="form-actions">
+        <button type="button" class="btn btn-primary btn-lg" onclick="startBatch()" id="btn-batch">开始批量处理</button>
+    </div>
+</div>
+
+<div id="batch-progress-card" class="card hidden">
+    <h3>批量处理进度</h3>
+    <div class="progress-bar-container">
+        <div id="batch-progress-bar" class="progress-bar" style="width: 0%"></div>
+    </div>
+    <div class="progress-info">
+        <span id="batch-progress-percent">0%</span>
+        <span id="batch-progress-count" class="text-muted">0 / 0</span>
+    </div>
+    <div class="log-panel">
+        <pre id="batch-log-output"></pre>
+    </div>
+    <div class="form-actions">
+        <button type="button" class="btn btn-danger" onclick="cancelBatchJob()" id="btn-batch-cancel">取消</button>
+    </div>
+</div>
+
+<div id="file-browser-modal" class="modal hidden">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>选择目录</h3>
+            <button type="button" class="btn-close" onclick="closeFileBrowser()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="breadcrumb" id="fb-breadcrumb"></div>
+            <div class="file-list" id="fb-list"></div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-primary" onclick="confirmFileBrowser()">确定</button>
+            <button type="button" class="btn btn-secondary" onclick="closeFileBrowser()">取消</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let batchJobId = null;
+let batchSSE = null;
+let fbTargetId = null;
+let fbDirOnly = false;
+let fbCurrentPath = '';
+
+async function startBatch() {
+    const directory = document.getElementById('batch-dir').value;
+    if (!directory) {
+        showToast('请选择视频目录', 'error');
+        return;
+    }
+
+    const params = new URLSearchParams();
+    params.append('directory', directory);
+    const preset = document.getElementById('batch-preset').value;
+    if (preset) params.append('preset', preset);
+    const outputDir = document.getElementById('batch-output-dir').value;
+    if (outputDir) params.append('output_dir', outputDir);
+    params.append('continue_on_error', document.getElementById('batch-continue').checked ? 'true' : 'false');
+
+    try {
+        const result = await apiPost('/job/batch', params);
+        batchJobId = result.job_id;
+        showToast('批量任务已创建', 'success');
+        document.getElementById('batch-progress-card').classList.remove('hidden');
+        document.getElementById('btn-batch').disabled = true;
+        connectBatchSSE(batchJobId);
+    } catch (e) {
+        showToast(e.message || '创建任务失败', 'error');
+    }
+}
+
+function connectBatchSSE(jobId) {
+    if (batchSSE) batchSSE.close();
+    const evtSource = new EventSource(`/api/sse/job/${jobId}`);
+    batchSSE = evtSource;
+
+    evtSource.addEventListener('update', (e) => {
+        const data = JSON.parse(e.data);
+        document.getElementById('batch-progress-bar').style.width = data.progress_percent + '%';
+        document.getElementById('batch-progress-percent').textContent = Math.round(data.progress_percent) + '%';
+        if (data.message) {
+            document.getElementById('batch-progress-count').textContent = data.message;
+        }
+        if (data.logs && data.logs.length > 0) {
+            document.getElementById('batch-log-output').textContent = data.logs.slice(-50).join('\n');
+        }
+    });
+
+    evtSource.addEventListener('done', (e) => {
+        const data = JSON.parse(e.data);
+        evtSource.close();
+        document.getElementById('btn-batch-cancel').classList.add('hidden');
+        document.getElementById('btn-batch').disabled = false;
+        if (data.status === 'completed') {
+            showToast('批量处理完成', 'success');
+        } else {
+            showToast('批量处理失败', 'error');
+        }
+    });
+}
+
+async function cancelBatchJob() {
+    if (!batchJobId) return;
+    try {
+        await apiPost(`/job/${batchJobId}/cancel`);
+        showToast('任务已取消', 'info');
+    } catch (e) {
+        showToast('取消失败', 'error');
+    }
+}
+
+// File browser (same as generate)
+async function openFileBrowser(targetId, dirOnly = false) {
+    fbTargetId = targetId;
+    fbDirOnly = dirOnly;
+    document.getElementById('file-browser-modal').classList.remove('hidden');
+    if (!fbCurrentPath) {
+        const home = await apiGet('/fs/home');
+        fbCurrentPath = home.path;
+    }
+    await renderFileBrowser(fbCurrentPath);
+}
+
+function closeFileBrowser() {
+    document.getElementById('file-browser-modal').classList.add('hidden');
+}
+
+function confirmFileBrowser() {
+    if (fbTargetId) {
+        document.getElementById(fbTargetId).value = fbCurrentPath;
+    }
+    closeFileBrowser();
+}
+
+async function renderFileBrowser(path) {
+    fbCurrentPath = path;
+    document.getElementById('fb-breadcrumb').textContent = path;
+    const list = document.getElementById('fb-list');
+    list.innerHTML = '<div class="fb-loading">加载中...</div>';
+
+    try {
+        const data = await apiGet(`/fs/browse?path=${encodeURIComponent(path)}`);
+        let html = '';
+        if (data.parent) {
+            html += `<div class="fb-item fb-dir" onclick="renderFileBrowser('${data.parent}')">
+                <span class="fb-icon">&#8593;</span> ..
+            </div>`;
+        }
+        for (const item of data.items) {
+            if (item.type === 'dir') {
+                html += `<div class="fb-item fb-dir" onclick="renderFileBrowser('${data.current}/${item.name}')">
+                    <span class="fb-icon">&#128193;</span> ${item.name}
+                </div>`;
+            }
+        }
+        list.innerHTML = html;
+    } catch (e) {
+        list.innerHTML = `<div class="fb-error">加载失败: ${e.message}</div>`;
+    }
+}
+</script>
+{% endblock %}

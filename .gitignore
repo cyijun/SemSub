@@ -91,7 +91,9 @@ semsub.yaml
 *.pyc
 
 # Docs (design docs not needed for distribution)
-docs/
+docs/*
+!docs/superpowers/
+!docs/superpowers/**
 
 # Logs
 *.log

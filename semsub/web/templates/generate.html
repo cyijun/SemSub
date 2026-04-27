@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+
+{% block title %}生成字幕{% endblock %}
+{% block page_title %}生成字幕{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="form-group">
+        <label>视频文件</label>
+        <div class="file-picker">
+            <input type="text" id="video-path" class="form-control" placeholder="/path/to/video.mp4" readonly>
+            <button type="button" class="btn btn-secondary" onclick="openFileBrowser('video-path', false)">浏览...</button>
+        </div>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label>预设</label>
+            <select id="preset" class="form-control">
+                <option value="">默认</option>
+                <option value="movie">电影 (movie)</option>
+                <option value="documentary">纪录片 (documentary)</option>
+                <option value="animation">动画 (animation)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>语言</label>
+            <input type="text" id="language" class="form-control" placeholder="auto">
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>输出路径 (可选)</label>
+        <div class="file-picker">
+            <input type="text" id="output-path" class="form-control" placeholder="默认: 视频同目录" readonly>
+            <button type="button" class="btn btn-secondary" onclick="openFileBrowser('output-path', false, true)">浏览...</button>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label class="checkbox-label">
+            <input type="checkbox" id="llm-enabled">
+            启用 LLM 后处理
+        </label>
+    </div>
+
+    <div class="form-actions">
+        <button type="button" class="btn btn-primary btn-lg" onclick="startGenerate()" id="btn-generate">开始生成</button>
+    </div>
+</div>
+
+<div id="progress-card" class="card hidden">
+    <h3>处理进度</h3>
+    <div class="progress-bar-container">
+        <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+    </div>
+    <div class="progress-info">
+        <span id="progress-percent">0%</span>
+        <span id="progress-stage" class="text-muted">等待中...</span>
+    </div>
+    <div id="progress-message" class="progress-message"></div>
+    <div class="log-panel">
+        <pre id="log-output"></pre>
+    </div>
+    <div class="form-actions">
+        <button type="button" class="btn btn-danger" onclick="cancelJob()" id="btn-cancel">取消</button>
+        <a id="download-link" class="btn btn-success hidden" download>下载字幕</a>
+    </div>
+</div>
+
+<div id="file-browser-modal" class="modal hidden">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>选择文件</h3>
+            <button type="button" class="btn-close" onclick="closeFileBrowser()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="breadcrumb" id="fb-breadcrumb"></div>
+            <div class="file-list" id="fb-list"></div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-primary" onclick="confirmFileBrowser()">确定</button>
+            <button type="button" class="btn btn-secondary" onclick="closeFileBrowser()">取消</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentJobId = null;
+let sseConnection = null;
+let fbTargetId = null;
+let fbDirOnly = false;
+let fbCurrentPath = '';
+
+async function startGenerate() {
+    const videoPath = document.getElementById('video-path').value;
+    if (!videoPath) {
+        showToast('请选择视频文件', 'error');
+        return;
+    }
+
+    const params = new URLSearchParams();
+    params.append('video_path', videoPath);
+    const preset = document.getElementById('preset').value;
+    if (preset) params.append('preset', preset);
+    const language = document.getElementById('language').value;
+    if (language) params.append('language', language);
+    const outputPath = document.getElementById('output-path').value;
+    if (outputPath) params.append('output_path', outputPath);
+    if (document.getElementById('llm-enabled').checked) params.append('llm_enabled', 'true');
+
+    try {
+        const result = await apiPost('/job/generate', params);
+        currentJobId = result.job_id;
+        showProgressCard();
+        connectSSE(currentJobId);
+        showToast('任务已创建', 'success');
+    } catch (e) {
+        showToast(e.message || '创建任务失败', 'error');
+    }
+}
+
+function showProgressCard() {
+    document.getElementById('progress-card').classList.remove('hidden');
+    document.getElementById('btn-generate').disabled = true;
+    document.getElementById('progress-bar').style.width = '0%';
+    document.getElementById('progress-percent').textContent = '0%';
+    document.getElementById('progress-stage').textContent = '等待中...';
+    document.getElementById('progress-message').textContent = '';
+    document.getElementById('log-output').textContent = '';
+    document.getElementById('btn-cancel').classList.remove('hidden');
+    document.getElementById('download-link').classList.add('hidden');
+}
+
+function connectSSE(jobId) {
+    if (sseConnection) sseConnection.close();
+    const evtSource = new EventSource(`/api/sse/job/${jobId}`);
+    sseConnection = evtSource;
+
+    evtSource.addEventListener('update', (e) => {
+        const data = JSON.parse(e.data);
+        document.getElementById('progress-bar').style.width = data.progress_percent + '%';
+        document.getElementById('progress-percent').textContent = Math.round(data.progress_percent) + '%';
+        if (data.current_stage) {
+            document.getElementById('progress-stage').textContent = data.current_stage;
+        }
+        if (data.message) {
+            document.getElementById('progress-message').textContent = data.message;
+        }
+        if (data.logs && data.logs.length > 0) {
+            document.getElementById('log-output').textContent = data.logs.join('\n');
+        }
+    });
+
+    evtSource.addEventListener('done', (e) => {
+        const data = JSON.parse(e.data);
+        evtSource.close();
+        document.getElementById('btn-cancel').classList.add('hidden');
+        document.getElementById('btn-generate').disabled = false;
+        if (data.status === 'completed') {
+            showToast('任务完成', 'success');
+            document.getElementById('download-link').classList.remove('hidden');
+        } else {
+            showToast('任务失败: ' + (data.error || ''), 'error');
+        }
+    });
+
+    evtSource.addEventListener('error', (e) => {
+        const data = JSON.parse(e.data);
+        showToast(data.message, 'error');
+        evtSource.close();
+    });
+}
+
+async function cancelJob() {
+    if (!currentJobId) return;
+    try {
+        await apiPost(`/job/${currentJobId}/cancel`);
+        showToast('任务已取消', 'info');
+    } catch (e) {
+        showToast('取消失败', 'error');
+    }
+}
+
+// File browser
+async function openFileBrowser(targetId, dirOnly = false, saveMode = false) {
+    fbTargetId = targetId;
+    fbDirOnly = dirOnly;
+    document.getElementById('file-browser-modal').classList.remove('hidden');
+    if (!fbCurrentPath) {
+        const home = await apiGet('/fs/home');
+        fbCurrentPath = home.path;
+    }
+    await renderFileBrowser(fbCurrentPath);
+}
+
+function closeFileBrowser() {
+    document.getElementById('file-browser-modal').classList.add('hidden');
+}
+
+function confirmFileBrowser() {
+    if (fbTargetId) {
+        document.getElementById(fbTargetId).value = fbCurrentPath;
+    }
+    closeFileBrowser();
+}
+
+async function renderFileBrowser(path) {
+    fbCurrentPath = path;
+    document.getElementById('fb-breadcrumb').textContent = path;
+    const list = document.getElementById('fb-list');
+    list.innerHTML = '<div class="fb-loading">加载中...</div>';
+
+    try {
+        const data = await apiGet(`/fs/browse?path=${encodeURIComponent(path)}`);
+        let html = '';
+        if (data.parent) {
+            html += `<div class="fb-item fb-dir" onclick="renderFileBrowser('${data.parent}')">
+                <span class="fb-icon">&#8593;</span> ..
+            </div>`;
+        }
+        for (const item of data.items) {
+            if (item.type === 'dir') {
+                html += `<div class="fb-item fb-dir" onclick="renderFileBrowser('${data.current}/${item.name}')">
+                    <span class="fb-icon">&#128193;</span> ${item.name}
+                </div>`;
+            } else if (!fbDirOnly) {
+                const ext = item.ext || '';
+                html += `<div class="fb-item fb-file${ext === '.mp4' || ext === '.mkv' || ext === '.avi' ? ' fb-video' : ''}"
+                    onclick="selectFile('${data.current}/${item.name}')">
+                    <span class="fb-icon">&#128196;</span> ${item.name}
+                    <span class="fb-size">${formatBytes(item.size)}</span>
+                </div>`;
+            }
+        }
+        list.innerHTML = html;
+    } catch (e) {
+        list.innerHTML = `<div class="fb-error">加载失败: ${e.message}</div>`;
+    }
+}
+
+function selectFile(path) {
+    fbCurrentPath = path;
+    confirmFileBrowser();
+}
+</script>
+{% endblock %}
