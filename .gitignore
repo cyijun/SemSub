@@ -92,6 +92,7 @@ semsub.yaml
 
 # Docs (design docs not needed for distribution)
 docs/
+!docs/superpowers/
 
 # Logs
 *.log
