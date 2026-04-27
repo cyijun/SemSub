@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -88,3 +89,55 @@ class TestJobAPI:
         assert response.status_code == 200
         # Should be a list
         assert isinstance(response.json(), list)
+
+
+class TestBatchAPI:
+    @patch("semsub.web.routes.api._run_batch")
+    def test_create_batch_job(self, mock_run_batch, client):
+        import tempfile, os
+        with tempfile.TemporaryDirectory() as td:
+            open(os.path.join(td, "test.mp4"), "w").close()
+            response = client.post("/api/job/batch", params={"directory": td})
+            assert response.status_code == 200
+            assert "job_id" in response.json()
+
+    def test_batch_nonexistent_dir(self, client):
+        response = client.post("/api/job/batch", params={"directory": "/nonexistent/dir"})
+        assert response.status_code == 404
+
+
+class TestSRTProcessAPI:
+    @patch("semsub.web.routes.api._run_srt_process")
+    def test_create_srt_job(self, mock_run_srt, client):
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".srt", delete=False) as f:
+            f.write(b"1\n00:00:01,000 --> 00:00:02,000\nHello\n")
+            path = f.name
+        try:
+            response = client.post("/api/job/srt-process", params={"srt_path": path, "mode": "correct"})
+            assert response.status_code == 200
+            assert "job_id" in response.json()
+        finally:
+            import os
+            os.unlink(path)
+
+
+class TestWorkspaceAPI:
+    def test_list_workspaces_empty(self, client):
+        response = client.get("/api/workspaces")
+        assert response.status_code == 200
+        assert response.json() == []
+
+
+class TestConfigAPI:
+    def test_get_config(self, client):
+        response = client.get("/api/config")
+        assert response.status_code == 200
+        data = response.json()
+        assert "asr" in data
+        assert "vad" in data
+
+    def test_get_config_masks_api_key(self, client):
+        response = client.get("/api/config")
+        data = response.json()
+        assert "llm" in data
