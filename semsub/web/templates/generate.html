@@ -17,15 +17,32 @@
         <div class="form-group">
             <label>预设</label>
             <select id="preset" class="form-control">
-                <option value="">默认</option>
-                <option value="movie">电影 (movie)</option>
-                <option value="documentary">纪录片 (documentary)</option>
-                <option value="animation">动画 (animation)</option>
+                <option value="">默认（平衡设置）</option>
+                <option value="movie">电影（密集对白，较长句子，0.3s 合并阈值）</option>
+                <option value="documentary">纪录片（旁白解说，较长句子，0.5s 合并阈值）</option>
+                <option value="animation">动画（快速语速，短句，0.2s 合并阈值）</option>
             </select>
         </div>
         <div class="form-group">
             <label>语言</label>
-            <input type="text" id="language" class="form-control" placeholder="auto">
+            <select id="language" class="form-control">
+                <option value="">自动检测 (auto)</option>
+                <option value="zh">中文 (zh)</option>
+                <option value="en">英语 (en)</option>
+                <option value="ja">日语 (ja)</option>
+                <option value="ko">韩语 (ko)</option>
+                <option value="fr">法语 (fr)</option>
+                <option value="de">德语 (de)</option>
+                <option value="es">西班牙语 (es)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>输出格式</label>
+            <select id="output-format" class="form-control">
+                <option value="srt">SRT</option>
+                <option value="vtt">VTT</option>
+                <option value="json">JSON</option>
+            </select>
         </div>
     </div>
 
@@ -51,6 +68,27 @@
 
 <div id="progress-card" class="card hidden">
     <h3>处理进度</h3>
+    <div class="stage-flow" id="stage-flow">
+        <div class="stage-item" data-stage="01_audio_extract">
+            <span class="stage-name">音频提取</span>
+        </div>
+        <span class="stage-arrow">→</span>
+        <div class="stage-item" data-stage="02_vad_split">
+            <span class="stage-name">VAD 分割</span>
+        </div>
+        <span class="stage-arrow">→</span>
+        <div class="stage-item" data-stage="03_asr_transcribe">
+            <span class="stage-name">ASR 转录</span>
+        </div>
+        <span class="stage-arrow">→</span>
+        <div class="stage-item" data-stage="04_subtitle_optimize">
+            <span class="stage-name">字幕优化</span>
+        </div>
+        <span class="stage-arrow">→</span>
+        <div class="stage-item" data-stage="05_llm_postprocess">
+            <span class="stage-name">LLM 后处理</span>
+        </div>
+    </div>
     <div class="progress-bar-container">
         <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
     </div>
@@ -107,6 +145,8 @@ async function startGenerate() {
     if (preset) params.append('preset', preset);
     const language = document.getElementById('language').value;
     if (language) params.append('language', language);
+    const outputFormat = document.getElementById('output-format').value;
+    if (outputFormat) params.append('output_format', outputFormat);
     const outputPath = document.getElementById('output-path').value;
     if (outputPath) params.append('output_path', outputPath);
     if (document.getElementById('llm-enabled').checked) params.append('llm_enabled', 'true');
@@ -132,6 +172,9 @@ function showProgressCard() {
     document.getElementById('log-output').textContent = '';
     document.getElementById('btn-cancel').classList.remove('hidden');
     document.getElementById('download-link').classList.add('hidden');
+    document.querySelectorAll('.stage-item').forEach(item => {
+        item.classList.remove('active', 'completed');
+    });
 }
 
 function connectSSE(jobId) {
@@ -151,6 +194,19 @@ function connectSSE(jobId) {
         }
         if (data.logs && data.logs.length > 0) {
             document.getElementById('log-output').textContent = data.logs.join('\n');
+        }
+        // Update stage flow visualization
+        if (data.current_stage) {
+            const stageId = data.current_stage.split(' ')[0]; // e.g. "03_asr_transcribe"
+            document.querySelectorAll('.stage-item').forEach(item => {
+                item.classList.remove('active', 'completed');
+                const itemStage = item.dataset.stage;
+                if (itemStage === stageId) {
+                    item.classList.add('active');
+                } else if (itemStage < stageId) {
+                    item.classList.add('completed');
+                }
+            });
         }
     });
 

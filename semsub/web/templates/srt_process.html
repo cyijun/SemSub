@@ -27,6 +27,7 @@
             <select id="srt-mode" class="form-control">
                 <option value="correct">校正 (correct)</option>
                 <option value="translate">翻译 (translate)</option>
+                <option value="bilingual">双语 (bilingual)</option>
             </select>
         </div>
         <div class="form-group">
@@ -41,7 +42,16 @@
 
     <div class="form-group">
         <label>目标语言 (翻译时必填)</label>
-        <input type="text" id="srt-target-lang" class="form-control" placeholder="zh-CN, en, ja...">
+        <select id="srt-target-lang" class="form-control">
+            <option value="">-- 请选择 --</option>
+            <option value="zh-CN">中文</option>
+            <option value="en">English</option>
+            <option value="ja">日本語</option>
+            <option value="ko">한국어</option>
+            <option value="fr">Français</option>
+            <option value="de">Deutsch</option>
+            <option value="es">Español</option>
+        </select>
     </div>
 
     <div class="form-actions">
@@ -51,6 +61,11 @@
 
 <div id="srt-progress-card" class="card hidden">
     <h3>处理进度</h3>
+    <div class="stage-flow" id="srt-stage-flow">
+        <div class="stage-item active" data-stage="llm_process">
+            <span class="stage-name">LLM 处理</span>
+        </div>
+    </div>
     <div class="progress-bar-container">
         <div id="srt-progress-bar" class="progress-bar" style="width: 0%"></div>
     </div>

@@ -354,6 +354,14 @@ async def reset_config():
     return {"status": "reset"}
 
 
+@router.get("/templates")
+async def list_templates():
+    """List available LLM prompt templates."""
+    from semsub.core.prompts import PromptManager
+    pm = PromptManager()
+    return pm.list_templates()
+
+
 @router.get("/config/export")
 async def export_config():
     """Export current configuration as YAML."""

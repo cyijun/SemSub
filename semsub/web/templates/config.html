@@ -16,6 +16,7 @@
         <button type="button" class="tab-btn" data-tab="vad" onclick="switchTab('vad')">VAD</button>
         <button type="button" class="tab-btn" data-tab="subtitle" onclick="switchTab('subtitle')">字幕</button>
         <button type="button" class="tab-btn" data-tab="llm" onclick="switchTab('llm')">LLM</button>
+        <button type="button" class="tab-btn" data-tab="output" onclick="switchTab('output')">输出</button>
     </div>
 
     <div id="config-form">
@@ -110,6 +111,39 @@
                     <option value="tool_calling">tool_calling</option>
                 </select>
             </div>
+            <div class="form-group">
+                <label>输出模式</label>
+                <select id="cfg-llm-mode" class="form-control">
+                    <option value="correct">校正 (correct)</option>
+                    <option value="translate">翻译 (translate)</option>
+                    <option value="bilingual">双语 (bilingual)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>提示词模板</label>
+                <select id="cfg-llm-template" class="form-control">
+                    <option value="correct.zh">中文纠错 (correct.zh)</option>
+                    <option value="translate.en">英文翻译 (translate.en)</option>
+                    <option value="bilingual">双语字幕 (bilingual)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="tab-panel" id="tab-output">
+            <div class="form-group">
+                <label>输出格式</label>
+                <select id="cfg-output-format" class="form-control">
+                    <option value="srt">SRT</option>
+                    <option value="vtt">VTT</option>
+                    <option value="json">JSON</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="cfg-output-intermediate">
+                    保存中间文件
+                </label>
+            </div>
         </div>
     </div>
 </div>
@@ -145,6 +179,10 @@ async function loadConfig() {
         document.getElementById('cfg-llm-url').value = config.llm?.base_url || '';
         document.getElementById('cfg-llm-model').value = config.llm?.model || '';
         document.getElementById('cfg-llm-format').value = config.llm?.response_format || 'auto';
+        document.getElementById('cfg-llm-mode').value = config.llm?.output_mode || 'correct';
+        document.getElementById('cfg-llm-template').value = config.llm?.prompt_template || 'correct.zh';
+        document.getElementById('cfg-output-format').value = config.output?.format || 'srt';
+        document.getElementById('cfg-output-intermediate').checked = config.output?.save_intermediate || false;
     } catch (e) {
         showToast('加载配置失败', 'error');
     }
@@ -177,6 +215,12 @@ async function saveConfig() {
             base_url: document.getElementById('cfg-llm-url').value,
             model: document.getElementById('cfg-llm-model').value,
             response_format: document.getElementById('cfg-llm-format').value,
+            output_mode: document.getElementById('cfg-llm-mode').value,
+            prompt_template: document.getElementById('cfg-llm-template').value,
+        },
+        output: {
+            format: document.getElementById('cfg-output-format').value,
+            save_intermediate: document.getElementById('cfg-output-intermediate').checked,
         },
     };
     try {

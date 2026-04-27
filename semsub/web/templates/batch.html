@@ -25,10 +25,10 @@
         <div class="form-group">
             <label>预设</label>
             <select id="batch-preset" class="form-control">
-                <option value="">默认</option>
-                <option value="movie">电影 (movie)</option>
-                <option value="documentary">纪录片 (documentary)</option>
-                <option value="animation">动画 (animation)</option>
+                <option value="">默认（平衡设置）</option>
+                <option value="movie">电影（密集对白，较长句子，0.3s 合并阈值）</option>
+                <option value="documentary">纪录片（旁白解说，较长句子，0.5s 合并阈值）</option>
+                <option value="animation">动画（快速语速，短句，0.2s 合并阈值）</option>
             </select>
         </div>
     </div>
@@ -40,6 +40,13 @@
         </label>
     </div>
 
+    <div class="form-group">
+        <label class="checkbox-label">
+            <input type="checkbox" id="batch-skip-existing">
+            跳过已有输出字幕的文件
+        </label>
+    </div>
+
     <div class="form-actions">
         <button type="button" class="btn btn-primary btn-lg" onclick="startBatch()" id="btn-batch">开始批量处理</button>
     </div>
@@ -47,6 +54,27 @@
 
 <div id="batch-progress-card" class="card hidden">
     <h3>批量处理进度</h3>
+    <div class="stage-flow" id="batch-stage-flow">
+        <div class="stage-item" data-stage="01_audio_extract">
+            <span class="stage-name">音频提取</span>
+        </div>
+        <span class="stage-arrow">→</span>
+        <div class="stage-item" data-stage="02_vad_split">
+            <span class="stage-name">VAD 分割</span>
+        </div>
+        <span class="stage-arrow">→</span>
+        <div class="stage-item" data-stage="03_asr_transcribe">
+            <span class="stage-name">ASR 转录</span>
+        </div>
+        <span class="stage-arrow">→</span>
+        <div class="stage-item" data-stage="04_subtitle_optimize">
+            <span class="stage-name">字幕优化</span>
+        </div>
+        <span class="stage-arrow">→</span>
+        <div class="stage-item" data-stage="05_llm_postprocess">
+            <span class="stage-name">LLM 后处理</span>
+        </div>
+    </div>
     <div class="progress-bar-container">
         <div id="batch-progress-bar" class="progress-bar" style="width: 0%"></div>
     </div>
@@ -102,6 +130,7 @@ async function startBatch() {
     const outputDir = document.getElementById('batch-output-dir').value;
     if (outputDir) params.append('output_dir', outputDir);
     params.append('continue_on_error', document.getElementById('batch-continue').checked ? 'true' : 'false');
+    params.append('skip_existing', document.getElementById('batch-skip-existing').checked ? 'true' : 'false');
 
     try {
         const result = await apiPost('/job/batch', params);
@@ -126,6 +155,18 @@ function connectBatchSSE(jobId) {
         document.getElementById('batch-progress-percent').textContent = Math.round(data.progress_percent) + '%';
         if (data.message) {
             document.getElementById('batch-progress-count').textContent = data.message;
+        }
+        if (data.current_stage) {
+            const stageId = data.current_stage.split(' ')[0];
+            document.querySelectorAll('.stage-item').forEach(item => {
+                item.classList.remove('active', 'completed');
+                const itemStage = item.dataset.stage;
+                if (itemStage === stageId) {
+                    item.classList.add('active');
+                } else if (itemStage < stageId) {
+                    item.classList.add('completed');
+                }
+            });
         }
         if (data.logs && data.logs.length > 0) {
             document.getElementById('batch-log-output').textContent = data.logs.slice(-50).join('\n');
