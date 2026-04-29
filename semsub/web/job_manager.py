@@ -117,6 +117,13 @@ class JobManager:
             job.status = JobStatus.CANCELLED
             return True
 
+    def delete_job(self, job_id: str) -> bool:
+        with self._lock:
+            if job_id not in self._jobs:
+                return False
+            del self._jobs[job_id]
+            return True
+
     def list_jobs(self) -> List[JobState]:
         with self._lock:
             return list(self._jobs.values())

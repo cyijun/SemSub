@@ -5,6 +5,16 @@
 
 {% block content %}
 <div class="card">
+    <div class="layer-bar">
+        <button type="button" class="layer-btn active" data-layer="project" onclick="switchLayer('project')">
+            项目配置
+        </button>
+        <button type="button" class="layer-btn" data-layer="user" onclick="switchLayer('user')">
+            用户配置
+        </button>
+    </div>
+    <div id="layer-hint" class="layer-hint"></div>
+
     <div class="toolbar">
         <button type="button" class="btn btn-primary" onclick="loadConfig()">刷新</button>
         <button type="button" class="btn btn-success" onclick="saveConfig()">保存</button>
@@ -151,12 +161,14 @@
 
 {% block extra_js %}
 <script>
-let currentConfig = null;
+let currentLayer = 'project';
+let sourceInfo = null;
 
 async function loadConfig() {
     try {
-        const config = await apiGet('/config');
-        currentConfig = config;
+        const endpoint = currentLayer === 'project' ? '/config/project' : '/config/user';
+        const config = await apiGet(endpoint);
+
         // ASR
         document.getElementById('cfg-asr-model').value = config.asr?.model_path || '';
         document.getElementById('cfg-asr-aligner').value = config.asr?.aligner_path || '';
@@ -183,9 +195,46 @@ async function loadConfig() {
         document.getElementById('cfg-llm-template').value = config.llm?.prompt_template || 'correct.zh';
         document.getElementById('cfg-output-format').value = config.output?.format || 'srt';
         document.getElementById('cfg-output-intermediate').checked = config.output?.save_intermediate || false;
+
+        updateSourceBadges(config);
     } catch (e) {
         showToast('加载配置失败', 'error');
     }
+}
+
+async function updateSourceBadges(config) {
+    if (!sourceInfo) {
+        try {
+            sourceInfo = await apiGet('/config/source');
+        } catch (e) {
+            return;
+        }
+    }
+
+    // Map section -> source label
+    const sectionNames = {
+        asr: 'ASR', vad: 'VAD', subtitle: '字幕',
+        llm: 'LLM', output: '输出'
+    };
+
+    // Add badges to tab buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        const tab = btn.dataset.tab;
+        const sectionKey = tab === 'subtitle' ? 'subtitle' : tab;
+        const source = sourceInfo.sources?.[sectionKey] || 'default';
+
+        // Remove old badge if any
+        const oldBadge = btn.querySelector('.source-badge');
+        if (oldBadge) oldBadge.remove();
+
+        // Only show badge if project config exists and source is not default
+        if (sourceInfo.has_project_config && source !== 'default') {
+            const badge = document.createElement('span');
+            badge.className = `source-badge badge-${source}`;
+            badge.textContent = source === 'project' ? '项目' : '用户';
+            btn.appendChild(badge);
+        }
+    });
 }
 
 async function saveConfig() {
@@ -224,8 +273,11 @@ async function saveConfig() {
         },
     };
     try {
-        await apiPostJson('/config', config);
-        showToast('配置已保存', 'success');
+        await apiPostJson(`/config?target=${currentLayer}`, config);
+        const layerName = currentLayer === 'project' ? '项目配置' : '用户配置';
+        showToast(`配置已保存到${layerName}`, 'success');
+        // Refresh source info after save
+        sourceInfo = await apiGet('/config/source');
         loadConfig();
     } catch (e) {
         showToast('保存失败: ' + (e.message || ''), 'error');
@@ -233,13 +285,56 @@ async function saveConfig() {
 }
 
 async function resetConfig() {
-    if (!confirm('确定要重置为默认配置吗？')) return;
+    const layerName = currentLayer === 'project' ? '项目配置' : '用户配置';
+    if (!confirm(`确定要重置${layerName}为默认配置吗？`)) return;
     try {
-        await apiPost('/config/reset');
+        if (currentLayer === 'project') {
+            // Save defaults to project config
+            await apiPostJson('/config?target=project', {});
+        } else {
+            await apiPost('/config/reset');
+        }
         showToast('配置已重置', 'success');
+        sourceInfo = await apiGet('/config/source');
         loadConfig();
     } catch (e) {
         showToast('重置失败', 'error');
+    }
+}
+
+function switchLayer(layer) {
+    currentLayer = layer;
+    document.querySelectorAll('.layer-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelector(`[data-layer="${layer}"]`).classList.add('active');
+    updateLayerHint();
+    loadConfig();
+}
+
+async function updateLayerHint() {
+    if (!sourceInfo) {
+        try {
+            sourceInfo = await apiGet('/config/source');
+        } catch (e) {
+            return;
+        }
+    }
+    const hint = document.getElementById('layer-hint');
+    if (currentLayer === 'project') {
+        if (sourceInfo.has_project_config) {
+            hint.textContent = '正在编辑项目配置 (./semsub.yaml)，保存后立即生效';
+            hint.className = 'layer-hint hint-project';
+        } else {
+            hint.textContent = '项目配置不存在，保存后将创建 semsub.yaml';
+            hint.className = 'layer-hint hint-create';
+        }
+    } else {
+        if (sourceInfo.has_project_config) {
+            hint.textContent = '正在编辑用户配置，注意：当前项目配置 (./semsub.yaml) 优先级更高，会覆盖以下设置';
+            hint.className = 'layer-hint hint-warning';
+        } else {
+            hint.textContent = '正在编辑用户配置 (~/.config/semsub/config.yaml)';
+            hint.className = 'layer-hint hint-user';
+        }
     }
 }
 
@@ -250,6 +345,20 @@ function switchTab(tabId) {
     document.getElementById('tab-' + tabId).classList.add('active');
 }
 
-document.addEventListener('DOMContentLoaded', loadConfig);
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        sourceInfo = await apiGet('/config/source');
+        // Default to project layer if project config exists
+        if (sourceInfo.has_project_config) {
+            currentLayer = 'project';
+            document.querySelectorAll('.layer-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelector('[data-layer="project"]').classList.add('active');
+        }
+        updateLayerHint();
+        loadConfig();
+    } catch (e) {
+        loadConfig();
+    }
+});
 </script>
 {% endblock %}

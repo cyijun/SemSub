@@ -50,6 +50,19 @@ async function apiPostJson(path, body) {
     return response.json();
 }
 
+async function apiDelete(path) {
+    const response = await fetch('/api' + path, { method: 'DELETE' });
+    if (!response.ok) {
+        let msg = `HTTP ${response.status}`;
+        try {
+            const data = await response.json();
+            msg = data.detail || data.message || msg;
+        } catch {}
+        throw new Error(msg);
+    }
+    return response.json();
+}
+
 // Toast notifications
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');

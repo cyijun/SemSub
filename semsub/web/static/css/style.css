@@ -1206,3 +1206,173 @@ body {
     color: var(--text-secondary);
     margin-top: 0.5rem;
 }
+
+/* History List */
+.history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.history-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius);
+    border: 1px solid var(--border-color);
+    transition: var(--transition);
+}
+
+.history-item:hover {
+    border-color: var(--border-hover);
+    background: rgba(240, 160, 48, 0.04);
+}
+
+.history-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.history-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.history-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+}
+
+.history-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+}
+
+.badge-success {
+    background: rgba(16, 185, 129, 0.12);
+    color: var(--success);
+}
+
+.badge-error {
+    background: rgba(225, 29, 72, 0.12);
+    color: var(--danger);
+}
+
+.badge-info {
+    background: var(--teal-soft);
+    color: var(--teal);
+}
+
+/* Config Layer Switcher */
+.layer-bar {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    padding: 0.375rem;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius);
+    border: 1px solid var(--border-color);
+    width: fit-content;
+}
+
+.layer-btn {
+    padding: 0.5rem 1rem;
+    border-radius: calc(var(--radius) - 2px);
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition);
+    font-family: inherit;
+}
+
+.layer-btn:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.layer-btn.active {
+    background: var(--bg-secondary);
+    color: var(--amber);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.layer-hint {
+    font-size: 0.8125rem;
+    margin-bottom: 1rem;
+    padding: 0.5rem 0.875rem;
+    border-radius: var(--radius);
+    border-left: 3px solid transparent;
+}
+
+.hint-project {
+    background: rgba(45, 212, 191, 0.08);
+    color: var(--teal);
+    border-left-color: var(--teal);
+}
+
+.hint-user {
+    background: rgba(148, 163, 184, 0.08);
+    color: var(--text-secondary);
+    border-left-color: var(--text-muted);
+}
+
+.hint-warning {
+    background: rgba(240, 160, 48, 0.08);
+    color: var(--amber);
+    border-left-color: var(--amber);
+}
+
+.hint-create {
+    background: rgba(16, 185, 129, 0.08);
+    color: var(--success);
+    border-left-color: var(--success);
+}
+
+/* Source badge on tab buttons */
+.source-badge {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 0.375rem;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 9999px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    vertical-align: middle;
+}
+
+.source-badge.badge-project {
+    background: rgba(45, 212, 191, 0.15);
+    color: var(--teal);
+}
+
+.source-badge.badge-user {
+    background: rgba(148, 163, 184, 0.12);
+    color: var(--text-muted);
+}

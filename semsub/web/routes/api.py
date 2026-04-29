@@ -151,6 +151,14 @@ async def cancel_job(request: Request, job_id: str):
     raise HTTPException(status_code=404, detail="任务不存在")
 
 
+@router.delete("/job/{job_id}")
+async def delete_job(request: Request, job_id: str):
+    """Delete a job from history."""
+    if request.app.state.job_manager.delete_job(job_id):
+        return {"status": "deleted"}
+    raise HTTPException(status_code=404, detail="任务不存在")
+
+
 # ---------------------------------------------------------------------------
 # Batch API
 # ---------------------------------------------------------------------------
@@ -215,7 +223,7 @@ async def create_batch_job(
 # SRT Process API
 # ---------------------------------------------------------------------------
 
-def _run_srt_process(job_id, job_manager, srt_path, mode, provider, response_format, target_language, output_path):
+def _run_srt_process(job_id, job_manager, srt_path, mode, provider, response_format, target_language, output_path, original_filename=None):
     """Background task that runs SRT processing."""
     from semsub.core.srt_llm_processor import SRTLLMProcessor
     reporter = WebProgressReporter(job_id, job_manager)
@@ -228,13 +236,34 @@ def _run_srt_process(job_id, job_manager, srt_path, mode, provider, response_for
             config.llm.target_language = target_language
         processor = SRTLLMProcessor(config.llm)
         reporter.on_log(f"开始 SRT 处理: {srt_path}")
-        out = Path(output_path) if output_path else Path(srt_path).with_suffix(".processed.srt")
+
+        if output_path:
+            out = Path(output_path)
+        else:
+            OUTPUT_DIR.mkdir(exist_ok=True)
+            if original_filename:
+                stem = Path(original_filename).stem
+                out = OUTPUT_DIR / f"{stem}.processed.srt"
+                counter = 1
+                while out.exists():
+                    out = OUTPUT_DIR / f"{stem}.processed({counter}).srt"
+                    counter += 1
+            else:
+                out = OUTPUT_DIR / (Path(srt_path).stem + ".processed.srt")
+                counter = 1
+                while out.exists():
+                    out = OUTPUT_DIR / f"{Path(srt_path).stem}.processed({counter}).srt"
+                    counter += 1
+
         result = processor.process_file(
             Path(srt_path),
             out,
             reporter=reporter,
         )
-        job_manager.set_status(job_id, JobStatus.COMPLETED, result={"output_path": str(result.get("output_path", out))})
+        job_manager.set_status(job_id, JobStatus.COMPLETED, result={
+            "output_path": str(result.get("output_path", out)),
+            "original_filename": original_filename,
+        })
     except Exception as e:
         reporter.on_error(None, e)
         job_manager.set_status(job_id, JobStatus.FAILED, error=str(e))
@@ -250,6 +279,7 @@ async def create_srt_process_job(
     response_format: Optional[str] = None,
     target_language: Optional[str] = None,
     output_path: Optional[str] = None,
+    original_filename: Optional[str] = None,
 ):
     target = Path(srt_path).expanduser()
     if not target.exists():
@@ -257,9 +287,9 @@ async def create_srt_process_job(
     job_manager = request.app.state.job_manager
     job_id = job_manager.create_job(
         JobType.SRT_PROCESS,
-        params={"srt_path": srt_path, "mode": mode},
+        params={"srt_path": srt_path, "mode": mode, "original_filename": original_filename},
     )
-    background_tasks.add_task(_run_srt_process, job_id, job_manager, srt_path, mode, provider, response_format, target_language, output_path)
+    background_tasks.add_task(_run_srt_process, job_id, job_manager, srt_path, mode, provider, response_format, target_language, output_path, original_filename)
     return {"job_id": job_id, "status": "pending"}
 
 
@@ -271,11 +301,16 @@ async def create_srt_process_job(
 UPLOAD_DIR = Path(tempfile.gettempdir()) / "semsub_uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
+# Output directory for SRT processing results
+OUTPUT_DIR = Path(tempfile.gettempdir()) / "semsub_outputs"
+OUTPUT_DIR.mkdir(exist_ok=True)
+
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     """Upload a file to server temporary directory."""
-    suffix = Path(file.filename or "upload").suffix
+    original_name = file.filename or "upload"
+    suffix = Path(original_name).suffix
     temp_path = UPLOAD_DIR / f"{uuid.uuid4().hex}{suffix}"
 
     with open(temp_path, "wb") as f:
@@ -283,18 +318,23 @@ async def upload_file(file: UploadFile = File(...)):
 
     return {
         "path": str(temp_path),
-        "filename": file.filename,
+        "filename": original_name,
     }
 
 
 @router.get("/download")
-async def download_file(path: str = Query(...)):
-    """Safely download a file from allowed directories."""
+async def download_file(
+    request: Request,
+    path: str = Query(...),
+    filename: Optional[str] = None,
+):
+    """Safely download a file from allowed directories or job outputs."""
     file_path = Path(path).resolve()
 
-    # Security: only allow downloads from temp directories or upload dir
+    # Security: check against allowed directories
     allowed_parents = [
         UPLOAD_DIR.resolve(),
+        OUTPUT_DIR.resolve(),
         Path(tempfile.gettempdir()).resolve(),
     ]
 
@@ -303,18 +343,27 @@ async def download_file(path: str = Query(...)):
     for ws_dir in workspace_dirs:
         allowed_parents.append(ws_dir.resolve())
 
-    if not any(
-        str(file_path).startswith(str(p))
-        for p in allowed_parents
-    ):
+    allowed = any(str(file_path).startswith(str(p)) for p in allowed_parents)
+
+    # Also allow downloading any job output path
+    if not allowed:
+        job_manager = request.app.state.job_manager
+        for job in job_manager.list_jobs():
+            if job.result and job.result.get("output_path"):
+                if file_path == Path(job.result["output_path"]).resolve():
+                    allowed = True
+                    break
+
+    if not allowed:
         raise HTTPException(status_code=403, detail="访问被拒绝")
 
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="文件不存在")
 
+    download_name = filename or file_path.name
     return FileResponse(
         str(file_path),
-        filename=file_path.name,
+        filename=download_name,
         media_type="text/plain",
     )
 
@@ -389,17 +438,75 @@ async def get_config():
     return _mask_api_key(config.model_dump())
 
 
+@router.get("/config/user")
+async def get_user_config():
+    """Get user-level configuration (without project overrides)."""
+    config_manager = get_config_manager()
+    if config_manager.user_config_file.exists():
+        data = config_manager._load_yaml(config_manager.user_config_file)
+        from semsub.core.config import PipelineConfig
+        defaults = PipelineConfig()
+        merged = config_manager._merge_config(defaults, data)
+        return _mask_api_key(merged.model_dump())
+    from semsub.core.config import PipelineConfig
+    return _mask_api_key(PipelineConfig().model_dump())
+
+
+@router.get("/config/project")
+async def get_project_config():
+    """Get project-level configuration (without user config)."""
+    config_manager = get_config_manager()
+    from semsub.core.config import PipelineConfig
+    defaults = PipelineConfig()
+    if config_manager.project_config_file.exists():
+        data = config_manager._load_yaml(config_manager.project_config_file)
+        merged = config_manager._merge_config(defaults, data)
+        return _mask_api_key(merged.model_dump())
+    return _mask_api_key(defaults.model_dump())
+
+
+@router.get("/config/source")
+async def get_config_source():
+    """Return source info for each config section."""
+    config_manager = get_config_manager()
+    sources = {}
+
+    # Check which files exist and what they override
+    def _section_source(section: str) -> str:
+        if config_manager.project_config_file.exists():
+            proj = config_manager._load_yaml(config_manager.project_config_file)
+            if section in proj and proj[section]:
+                return "project"
+        if config_manager.user_config_file.exists():
+            user = config_manager._load_yaml(config_manager.user_config_file)
+            if section in user and user[section]:
+                return "user"
+        return "default"
+
+    for section in ["asr", "vad", "subtitle", "llm", "output"]:
+        sources[section] = _section_source(section)
+
+    return {
+        "sources": sources,
+        "has_project_config": config_manager.project_config_file.exists(),
+        "has_user_config": config_manager.user_config_file.exists(),
+    }
+
+
 @router.post("/config")
-async def save_config(request: Request):
-    """Save configuration to user config file."""
+async def save_config(request: Request, target: str = Query(default="user")):
+    """Save configuration to user or project config file."""
     from pydantic import ValidationError
     body = await request.json()
     config_manager = get_config_manager()
     try:
         from semsub.core.config import PipelineConfig
         config = PipelineConfig(**body)
-        config_manager.save_user_config(config)
-        return {"status": "saved"}
+        if target == "project":
+            config_manager.save_project_config(config)
+        else:
+            config_manager.save_user_config(config)
+        return {"status": "saved", "target": target}
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
