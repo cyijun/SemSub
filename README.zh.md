@@ -46,7 +46,7 @@ EOF
 
 ## 使用指南
 
-### Gradio Web 图形界面（推荐）
+### Web GUI（推荐）
 
 最简单的使用方式：
 
@@ -62,6 +62,16 @@ python -m semsub gui
 - 完整的 ASR/VAD/字幕/LLM 参数配置
 - **SRT 处理增强**: 支持浏览器拖拽上传 SRT 文件，处理完成后直接下载，带历史记录管理
 - **双层配置管理**: 可切换编辑「项目配置」（`./semsub.yaml`）和「用户配置」（`~/.config/semsub/config.yaml`），每项参数显示来源标记
+
+**界面预览：**
+
+| 首页 | 生成字幕 | SRT 处理 |
+|:---:|:---:|:---:|
+| ![首页](images/home.png) | ![生成字幕](images/generate.png) | ![SRT 处理](images/srt-process.png) |
+
+| 系统设置 |
+|:---:|
+| ![系统设置](images/config.png) |
 
 **快速开始流程：**
 1. 进入「快速开始」页面
@@ -165,7 +175,7 @@ python -m semsub.cli process-srt input.srt -o output.srt --llm-mode translate
 
 #### Web GUI SRT 处理
 
-在 Gradio Web 界面的「SRT 处理」页面，你可以：
+在 Web GUI 的「SRT 处理」页面，你可以：
 
 1. **上传 SRT 文件**：点击选择或拖拽文件到上传区域
 2. **选择处理模式**：纠错 / 翻译 / 双语字幕
@@ -197,7 +207,7 @@ python -m semsub.cli generate video.mp4 --preset documentary
 
 ### Web GUI 双层配置管理
 
-在 Gradio Web 界面的「设置」页面，支持 VSCode 风格的双层配置切换：
+在 Web GUI 的「设置」页面，支持 VSCode 风格的双层配置切换：
 
 - **项目配置**（`./semsub.yaml`）：当前目录下的项目级配置，优先级最高。默认显示此配置（如果存在）。
 - **用户配置**（`~/.config/semsub/config.yaml`）：全局用户级配置，对所有项目生效。

@@ -46,13 +46,13 @@ EOF
 
 ## Usage Guide
 
-### Gradio Web GUI (Recommended)
+### Web GUI (Recommended)
 
 The easiest way to use SemSub:
 
 ```bash
 python -m semsub gui
-# Open http://localhost:7860 in your browser
+# Open http://localhost:8080 in your browser
 ```
 
 **Features:**
@@ -62,6 +62,16 @@ python -m semsub gui
 - Full ASR/VAD/Subtitle/LLM configuration
 - **SRT Processing**: Drag-and-drop or click to upload SRT files, download processed output, view history with delete support
 - **Dual-Layer Config**: Switch between Project Config (`./semsub.yaml`) and User Config (`~/.config/semsub/config.yaml`) with source badges per section
+
+**Screenshots:**
+
+| Home | Generate | SRT Processing |
+|:---:|:---:|:---:|
+| ![Home](images/home.png) | ![Generate](images/generate.png) | ![SRT Processing](images/srt-process.png) |
+
+| Settings |
+|:---:|
+| ![Settings](images/config.png) |
 
 **Quick Start Flow:**
 1. Go to "Quick Start" page
