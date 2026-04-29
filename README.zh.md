@@ -19,6 +19,8 @@ python -m semsub gui
 - **LLM 增强**: 错别字纠正、翻译、双语字幕
 - **批量处理**: 一行命令处理整个目录
 - **断点续传**: 中断后可从中断处恢复
+- **SRT 浏览器上传/下载**: Web GUI 支持拖拽上传 SRT 文件，处理完成后直接下载
+- **双层配置管理**: VSCode 风格的项目配置 + 用户配置切换编辑
 
 ## 安装
 
@@ -58,6 +60,8 @@ python -m semsub gui
 - 5 个功能页面：快速开始、批量处理、SRT 处理、工作区、设置
 - 实时进度显示，分阶段展示处理状态
 - 完整的 ASR/VAD/字幕/LLM 参数配置
+- **SRT 处理增强**: 支持浏览器拖拽上传 SRT 文件，处理完成后直接下载，带历史记录管理
+- **双层配置管理**: 可切换编辑「项目配置」（`./semsub.yaml`）和「用户配置」（`~/.config/semsub/config.yaml`），每项参数显示来源标记
 
 **快速开始流程：**
 1. 进入「快速开始」页面
@@ -159,6 +163,18 @@ python -m semsub.cli process-srt input.srt -o output.srt --llm-mode correct
 python -m semsub.cli process-srt input.srt -o output.srt --llm-mode translate
 ```
 
+#### Web GUI SRT 处理
+
+在 Gradio Web 界面的「SRT 处理」页面，你可以：
+
+1. **上传 SRT 文件**：点击选择或拖拽文件到上传区域
+2. **选择处理模式**：纠错 / 翻译 / 双语字幕
+3. **开始处理**：调用 LLM 处理字幕内容
+4. **下载结果**：处理完成后点击下载，输出文件名为 `original.processed.srt`
+5. **查看历史**：历史记录列表显示文件名、处理模式、状态和时间，支持删除记录
+
+默认输出路径为 `temp/semsub_outputs/`，自动处理重名（`file.processed.srt`、`file.processed(1).srt` 等）。
+
 ## 场景预设
 
 | 预设 | 适用场景 | 关键参数 |
@@ -178,6 +194,15 @@ python -m semsub.cli generate video.mp4 --preset documentary
 2. 项目配置（`./semsub.yaml`）
 3. 用户配置（`~/.config/semsub/config.yaml`）
 4. 内置预设
+
+### Web GUI 双层配置管理
+
+在 Gradio Web 界面的「设置」页面，支持 VSCode 风格的双层配置切换：
+
+- **项目配置**（`./semsub.yaml`）：当前目录下的项目级配置，优先级最高。默认显示此配置（如果存在）。
+- **用户配置**（`~/.config/semsub/config.yaml`）：全局用户级配置，对所有项目生效。
+
+每个配置分类（ASR / VAD / 字幕 / LLM / 输出）中，每项参数会显示其来源标记：**项目**、**用户** 或 **默认**。编辑用户配置时，如果项目配置存在，页面会提示「项目配置将覆盖此处的设置」，帮助你理解实际生效的值。
 
 ### 必需配置
 
@@ -255,6 +280,9 @@ python -m semsub.cli config edit
 
 **Q: 能否只用 CPU？**
 配置中设置 `asr.device: "cpu"`。注意：速度很慢，不推荐。
+
+**Q: 在 Web GUI 的设置页面保存后，为什么值又变回去了？**
+这是因为配置优先级导致的。例如你在用户配置中修改了 `asr.batch_size`，但项目配置（`./semsub.yaml`）中也存在相同的设置，由于项目配置优先级更高，实际生效的仍然是项目配置的值。页面会显示来源标记提示你该值来自项目配置。要修改这个值，请切换到「项目配置」标签页进行编辑，或者删除项目配置中的对应项。
 
 ## 许可证
 

@@ -19,6 +19,8 @@ python -m semsub gui
 - **LLM Enhancement**: Error correction, translation, and bilingual subtitles
 - **Batch Processing**: Process entire directories with one command
 - **Resume Support**: Interrupted processing can resume from checkpoints
+- **SRT Processing**: Browser upload/download for standalone SRT correction and translation
+- **Dual-Layer Config**: VSCode-style project and user configuration management
 
 ## Installation
 
@@ -58,6 +60,8 @@ python -m semsub gui
 - 5 pages: Quick Start, Batch Processing, SRT Processing, Workspaces, Settings
 - Real-time progress with stage-by-stage status
 - Full ASR/VAD/Subtitle/LLM configuration
+- **SRT Processing**: Drag-and-drop or click to upload SRT files, download processed output, view history with delete support
+- **Dual-Layer Config**: Switch between Project Config (`./semsub.yaml`) and User Config (`~/.config/semsub/config.yaml`) with source badges per section
 
 **Quick Start Flow:**
 1. Go to "Quick Start" page
@@ -151,6 +155,7 @@ for d in ./*/.semsub; do python -m semsub.cli clean "${d%/.semsub}"; done
 
 #### Process Existing SRT
 
+**CLI:**
 ```bash
 # Correct ASR errors using LLM
 python -m semsub.cli process-srt input.srt -o output.srt --llm-mode correct
@@ -158,6 +163,15 @@ python -m semsub.cli process-srt input.srt -o output.srt --llm-mode correct
 # Translate subtitles
 python -m semsub.cli process-srt input.srt -o output.srt --llm-mode translate
 ```
+
+**Web GUI:**
+1. Go to "SRT Processing" page
+2. Upload SRT file via drag-and-drop or click to select
+3. Choose LLM mode (correct / translate / bilingual)
+4. Click "Process" and download the output when complete
+5. View and manage past tasks in the history list
+
+Default output directory: `temp/semsub_outputs/` (with automatic deduplication: `file.processed.srt`, `file.processed(1).srt`, etc.)
 
 ## Scene Presets
 
@@ -178,6 +192,8 @@ Configuration hierarchy (highest to lowest priority):
 2. Project config (`./semsub.yaml`)
 3. User config (`~/.config/semsub/config.yaml`)
 4. Built-in presets
+
+In the Web GUI Settings page, you can switch between **Project Config** and **User Config** (VSCode-style). It defaults to project config if it exists, since it has the highest priority. Each config section (ASR/VAD/Subtitle/LLM/Output) shows a **source badge** indicating whether the value comes from the project config, user config, or built-in default. When editing the user config, a warning is shown if a project config exists, because project config values will override user config values at runtime.
 
 ### Essential Settings
 
@@ -255,6 +271,9 @@ Any OpenAI-compatible API: DeepSeek, Kimi, Qwen, OpenAI, etc.
 
 **Q: CPU-only mode?**
 Set `asr.device: "cpu"` in config. Note: Very slow, not recommended.
+
+**Q: Why does my config change revert after saving?**
+Check if a project config (`./semsub.yaml`) exists. Project config has higher priority than user config (`~/.config/semsub/config.yaml`). If you edit the user config but a project config exists with the same key, the project config value will take effect. Edit the project config directly, or delete it if you want user config to apply.
 
 ## License
 

@@ -107,6 +107,35 @@ python -m semsub.gradio_gui
 - 实时进度显示和日志输出
 - 完整的 ASR/VAD/字幕/LLM 配置界面
 
+### Web API Endpoints
+
+**文件操作：**
+- `POST /api/upload` - 文件上传，返回 `{path, filename}`
+- `GET /api/download?path=&filename=` - 安全文件下载（支持 temp 目录、workspace 目录、job output_path）
+
+**配置管理：**
+- `GET /api/config/project` - 获取项目级配置
+- `GET /api/config/source` - 获取各配置段的来源信息 `{sources, has_project_config, has_user_config}`
+- `POST /api/config?target=user|project` - 保存配置到指定层级
+
+**任务管理：**
+- `DELETE /api/job/{job_id}` - 删除任务记录
+
+**Web GUI (FastAPI + Jinja2):**
+```bash
+# 启动 Web 界面
+python -m semsub.web.main
+
+# 指定端口
+python -m semsub.web.main --port 8080
+```
+
+**Web GUI 特性：**
+- 浏览器端文件上传与下载
+- SSE 实时进度推送
+- 双层配置管理（project / user）
+- SRT 独立处理工作流
+
 **PyQt6 GUI (旧版，不再维护):**
 ```bash
 python -m semsub.gui.app
@@ -162,16 +191,24 @@ semsub/
 │   ├── app.py               # GUI entry point
 │   ├── workers/             # QThread workers
 │   └── widgets/             # Custom widgets
-└── gradio_gui/              # Gradio Web GUI (recommended)
-    ├── app.py               # Gradio app entry
-    ├── pages/               # Page modules
-    │   ├── home.py          # Quick start page (file path input)
-    │   ├── batch.py         # Batch processing page
-    │   ├── srt_process.py   # SRT processing page
-    │   ├── workspaces.py    # Workspace management page
-    │   └── settings.py      # Settings page (ASR/VAD/Subtitle/LLM tabs)
-    ├── state.py             # Global state management with ProcessingJob
-    └── utils.py             # Utility functions
+├── gradio_gui/              # Gradio Web GUI (recommended)
+│   ├── app.py               # Gradio app entry
+│   ├── pages/               # Page modules
+│   │   ├── home.py          # Quick start page (file path input)
+│   │   ├── batch.py         # Batch processing page
+│   │   ├── srt_process.py   # SRT processing page
+│   │   ├── workspaces.py    # Workspace management page
+│   │   └── settings.py      # Settings page (ASR/VAD/Subtitle/LLM tabs)
+│   ├── state.py             # Global state management with ProcessingJob
+│   └── utils.py             # Utility functions
+└── web/                     # FastAPI + Jinja2 Web GUI
+    ├── main.py              # FastAPI app entry
+    ├── job_manager.py       # In-memory job tracking
+    ├── progress_reporter.py # WebProgressReporter (SSE)
+    ├── routes/
+    │   └── api.py           # REST API endpoints
+    ├── static/              # CSS, JS assets
+    └── templates/           # Jinja2 templates
 ```
 
 ### Pipeline Stages
@@ -243,6 +280,12 @@ Export final subtitles
 3. User config (`~/.config/semsub/config.yaml`)
 4. Built-in preset defaults
 
+**Web GUI 双层配置管理：**
+- 设置页面加载 `/config/project` 或 `/config/user`，而非 merged config
+- `POST /config?target=` 保存到指定层级
+- `/config/source` 返回各段的来源，前端用来显示 source badge
+- 默认层为 project（如果存在），因为它是实际生效的最高优先级配置
+
 **Presets:**
 - `movie`: Dense dialogue (max_chars=40, gap_threshold=0.3s)
 - `documentary`: Narration (max_chars=35, gap_threshold=0.5s, min_silence=800ms)
@@ -278,6 +321,23 @@ llm:
   base_url: "https://api.deepseek.com/v1"
   model: "deepseek-chat"
 ```
+
+### SRT 处理浏览器工作流
+
+Web GUI 的 SRT 处理页面采用浏览器端上传/下载模式：
+
+1. **上传**：前端 `FormData` → `POST /api/upload` → 存到 `temp/semsub_uploads/`
+2. **处理**：前端提交路径 → `POST /api/job/srt-process`（带 `original_filename`）→ 后台 `_run_srt_process`
+3. **输出**：默认到 `temp/semsub_outputs/`，自动重名处理
+4. **下载**：`/api/download?path=&filename=` + `<a download>` 属性
+5. **进度**：SSE `/api/sse/job/{job_id}`
+6. **历史**：`GET /api/job/list` 过滤 `type === 'srt_process'`
+
+### File Download 安全机制
+
+- `/download` 允许的目录：UPLOAD_DIR、OUTPUT_DIR、tempdir、workspace `.semsub` 目录
+- 额外允许：任何已完成 job 的 `result.output_path`
+- `?filename=` 参数设置 Content-Disposition 友好文件名
 
 ### Progress Reporting
 
